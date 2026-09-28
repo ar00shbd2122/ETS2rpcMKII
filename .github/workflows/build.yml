@@ -1,0 +1,39 @@
+name: build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -A x64
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      # The ini failsafe must hold: defaults on missing/garbage/deleted ini
+      - name: Run ini failsafe test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      # Stage a ready-to-drop-in bundle: DLL + pre-given ini + presets
+      - name: Stage bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path bundle/templates -Force | Out-Null
+          Copy-Item build/Release/ets2rpcmkii.dll bundle/
+          Copy-Item templates/ets2rpcmkii.ini bundle/
+          Copy-Item templates/presets/*.ini bundle/templates/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ets2rpcmkii
+          path: bundle/
+          if-no-files-found: error

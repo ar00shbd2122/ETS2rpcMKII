@@ -1,0 +1,31 @@
+# Build artifacts
+build/
+build-*/
+out/
+obj/
+*.obj
+bundle/
+ets2rpcmkii-v*.zip
+*.dll
+*.lib
+*.exp
+*.pdb
+*.obj
+*.o
+
+# Local config with personal settings (templates ARE committed)
+ets2rpcmkii.ini
+swiftdrive.ini
+
+# Downloaded art assets (fetched via tools/download_assets.sh)
+assets/portal/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+
+# OS
+Thumbs.db
+.DS_Store
