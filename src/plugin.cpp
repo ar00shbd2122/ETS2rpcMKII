@@ -687,9 +687,9 @@ static void build_presence() {
     /* v5.0.2: delivery_complete renders AFTER the delivered event wiped
      * the job buffers, so {cargo}/{dest} would be empty exactly when the
      * completion card needs them. Both are snapshotted at event time. */
-    tok["cargo"]          = tok["cargo"].empty() ? g_last_cargo : tok["cargo"];
-    tok["dest"]           = g.dest_city[0] ? g.dest_city : g_last_dest;
-    tok["src"]            = g.src_city[0]  ? g.src_city  : g_last_src;
+    tok["cargo"]          = tok["cargo"].empty() ? g.last_cargo : tok["cargo"];
+    tok["dest"]           = g.dest_city[0] ? g.dest_city : g.last_dest;
+    tok["src"]            = g.src_city[0]  ? g.src_city  : g.last_src;
     tok["dest"]           = g.dest_city;
     tok["src"]            = g.src_city;
     tok["company"]        = g.dest_company[0] ? g.dest_company : g.src_company;
