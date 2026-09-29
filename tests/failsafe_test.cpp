@@ -106,6 +106,13 @@ int main() {
                                                "2c. regenerated file: [discord] application_id kept");
         check(text.find("[countries]") != std::string::npos,
                                                "2d. regenerated file: [countries] section kept");
+        check(text.find("Close to {city}{country_tag}") != std::string::npos,
+                                               "2e. regenerated file: location lines use {country_tag} (no bare-paren risk)");
+        check(text.find("{ferry_to}") != std::string::npos &&
+              text.find("{ferry_from}") != std::string::npos,
+                                               "2f. regenerated file: ferry/train templates use real crossing names");
+        check(text.find("({country_code})") == std::string::npos,
+                                               "2g. regenerated file: no raw ( country_code ) parens left anywhere");
     }
 
     /* 3. valid ini on disk: its values must win over the defaults */
@@ -156,6 +163,32 @@ int main() {
         check(exists(ini),                     "5c. runtime: default file regenerated after deletion");
         check(g_log.find("disappeared") != std::string::npos,
                                                "5d. runtime: deletion fallback logged");
+    }
+
+    /* 6. v5.0 schema report: typos and out-of-range values get named
+     *    in the log instead of being silently ignored or clamped */
+    {
+        std::string dir = temp_dir();
+        write_file(dir + "\\ets2rpcmkii.ini",
+                   "[behaviour]\nevent_hold = 99\n"
+                   "evnt_hold = 40\n"
+                   "update_interval = 9999\n"
+                   "[template.not_a_state]\nstate = x\n");
+        fresh(dir);
+
+        check(cfg::event_hold() == 99,         "6a. schema: typo'd key does not clobber the real one");
+        check(g_log.find("unknown key 'evnt_hold'") != std::string::npos,
+                                               "6b. schema: unknown key named in the log");
+        check(g_log.find("update_interval") != std::string::npos &&
+              g_log.find("out of range") != std::string::npos,
+                                               "6c. schema: out-of-range value reported");
+        check(g_log.find("unknown template state") != std::string::npos,
+                                               "6d. schema: unknown template state reported");
+        check(cfg::update_interval() == 3600,  "6e. schema: clamped value still applied safely");
+
+        cfg::maybe_reload();
+        check(g_log.find("unknown key 'evnt_hold'") != std::string::npos,
+                                               "6f. schema: report also runs after a hot reload");
     }
 
     std::printf("-----------------------------\n%s\n",

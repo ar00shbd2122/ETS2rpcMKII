@@ -1,137 +1,72 @@
 # ETS2rpcMKII
 
-[![build](https://github.com/YOUR_USERNAME/ets2rpcmkii/actions/workflows/build.yml/badge.svg)](https://github.com/YOUR_USERNAME/ets2rpcmkii/actions/workflows/build.yml)
+[![build](https://github.com/ar00shbd2122/ETS2rpcMKII/actions/workflows/build.yml/badge.svg)](https://github.com/ar00shbd2122/ETS2rpcMKII/actions/workflows/build.yml)
 
-> ## READ THIS FIRST: legacy Discord tech, and there will be no migration
+Discord Rich Presence for Euro Truck Simulator 2, from live game telemetry.
+One DLL, one ini. No Discord SDK, no bundled runtimes, no background services,
+no accounts. What you are doing in the game shows up on your Discord profile,
+and every line of it is yours to rewrite while the game is running.
+
+> ## Honest disclosure: this runs on Discord's legacy Rich Presence tech
 >
-> This plugin is built on the tech of Discord's **legacy Game SDK**: it does
-> not ship or load the SDK binary, but it speaks the same **legacy Rich
-> Presence protocol** (the local `discord-ipc` named pipe) that the Game SDK
-> used.
+> The plugin speaks the same local `discord-ipc` protocol that Discord's old
+> Game SDK used. Discord has marked that SDK *legacy* and stopped maintaining
+> it in favor of the new Social SDK, which is built for registered game
+> developers. Using it for ETS2 would mean registering ourselves as SCS
+> Software's game - impersonating another studio is not something this project
+> will ever do, out of respect for SCS.
 >
-> Discord has moved the Game SDK to **Legacy status** and states it is **no
-> longer being maintained**, in favor of the new **Discord Social SDK**. The
-> Social SDK path is designed for registered, and for full features verified,
-> game developers: you register and claim or submit a *game* identity. Doing
-> that for Euro Truck Simulator 2 would mean presenting ourselves as the
-> game's developer. That is **impersonation of SCS Software**, and out of
-> respect for the studio, **this project will never do it.**
->
-> **What this means for you:** the tool works today because the Discord
-> desktop client still honors the legacy pipe. If Discord ever patches legacy
-> Rich Presence out or breaks the protocol, **this tool will NOT get an
-> update to the Social SDK.** It would die with the legacy tech. Use it
-> knowing that.
+> Today the Discord desktop client still honors the legacy pipe, and the plugin
+> works. If Discord removes it one day, this project dies with the tech rather
+> than pretending to be someone else's verified game. Use it knowing that.
 
-**The Discord Rich Presence plugin for Euro Truck Simulator 2, Mark II.**
+Current release: **v5.0.0**. History at the bottom.
 
-Current release: **v4.2.0**. Full history in [Version history](#version-history).
-
-One self-contained DLL. No Discord SDK, no bundled DLLs, no OAuth, no
-background services. Live telemetry on your Discord profile, and every
-single field of it is yours to redesign from `ets2rpcmkii.ini`,
-hot-reloaded while the game runs. Every build ships with a ready-made ini
-plus a `templates/` folder of style presets, and a **Get on Steam** button
-on your profile, just like official game profiles.
+## What it looks like
 
 ```
-Scania S 2016 (87 km/h)
-24 t - 132 km remaining
-  [Get on Steam]
- small badge: brand logo or the flag of the country you drive in
+Euro Truck Simulator 2
+Close to Vyborg (RU) ・ 62% done
+12 t of Construction materials ・ 148 km ・ ETA 17:45
+ [Get on Steam]
 ```
 
-Full manual with every state, field and token: [DOCS.md](DOCS.md)
+Big image is the official round ETS2 icon. The small badge is your truck
+brand's logo. Both are fixed on purpose; every piece of *text* is yours.
 
-## Compatibility
+## Why this one and not the other RPC tools
 
-| | |
-|---|---|
-| Game | Euro Truck Simulator 2 (Steam, Windows x64) |
-| Tested game version | **1.61.x** (verified on 1.61.1.1s) |
-| Telemetry API | SCS Telemetry **1.00** (`SCS_TELEMETRY_VERSION 1.00`) |
-| SDK game version | eut2 **1.18** (`SCS_SDK_GAME_VERSION_eut2`, from the official headers) |
-| Discord | desktop client running; the legacy `discord-ipc` Rich Presence pipe |
-| Install location | `ETS2/bin/win_x64/plugins/ets2rpcmkii.dll` |
+Most ETS2 Rich Presence tools are a Python script plus a telemetry server,
+or a fixed-template DLL. This is a single SCS telemetry plugin that talks to
+Discord directly and treats configuration as a first-class feature:
 
-Older game versions back to roughly 1.37 expose the same telemetry API 1.00,
-so the plugin should keep working across updates; only the SDK headers it was
-built against are from the 1.61 era.
+- **Hot-reload everything.** Save `ets2rpcmkii.ini` and the presence changes
+  within a couple of seconds, mid-drive. No restart, no rebuild.
+- **You design the two text lines**, per state, with live tokens
+  (`{cargo}`, `{dest}`, `{eta_clock}`, `{country_tag}`, ...). Unknown tokens
+  vanish, so a typo cannot garble your profile.
+- **Foolproof by design.** Delete the ini: defaults baked into the DLL take
+  over and the file is regenerated. Type `evnt_hold` instead of `event_hold`:
+  the log tells you. Write 9999 for a value capped at 600: the log tells you.
+  A line can no longer end in bare `()` or a dangling "to" - a hygiene pass
+  strips that class of garbage from every line.
+- **Crash-proof.** Every SCS entry point runs under SEH guards; an internal
+  fault is logged and swallowed, the game never goes down with us. Telemetry
+  floats are NaN/inf guarded so a misbehaving mod cannot print "nan km/h".
+- **Zero network.** The only thing it talks to is the local Discord pipe.
 
-## What is new in MKII (v4)
+## States
 
-- **Rebuilt on the real official SCS SDK** (v4.1.0): the plugin now uses
-  the genuine SCS Telemetry SDK headers (API 1.00, game version 1.18),
-  reads job data from the configuration event the way the real SDK
-  delivers it, walks event attributes with the correct struct layout,
-  and logs every startup step so a rejected load can never be silent.
-- **Ini failsafe** (v4.1.0): if `ets2rpcmkii.ini` is missing, unreadable or
-  deleted while the game runs, the defaults baked into the DLL take over
-  instantly and the file is regenerated, so the presence always comes up.
-  Discord handshake results (READY or a rejection with the reason) are now
-  logged too. Covered by an automated test that runs on every build.
-- **Ships pre-configured**: every build drops the DLL *and* a working
-  `ets2rpcmkii.ini` next to it. No blank first run.
-- **`templates/` style presets** included with each build:
+Thirteen of them, with priority: `delivery_complete`, `tollgate`, `got_fine`,
+`paused`, `on_ferry`, `on_train`, `speeding`, `cargo_damaged`,
+`truck_damaged`, then the normal three (`delivery_active`, `resting`,
+`free_roam`, `main_menu`).
 
-  | Preset | Vibe |
-  |---|---|
-  | `templates/ets2rpcmkii.ini` | balanced default, truck and location style |
-  | `templates/presets/distance.ini` | journey focused: km left, ETA, elapsed time |
-  | `templates/presets/location.ini` | location focused: country flag badge, city names |
-  | `templates/presets/most_info.ini` | everything: cargo, weight, fuel, damage, income |
-
-- **Get on Steam button** on every preset, plus an optional second button.
-- **New tokens**: `{city}`, `{distance_remaining}`, `{game_version}`,
-  `{country_emoji}`.
-- Renamed from SwiftDrive to **ETS2rpcMKII** (DLL: `ets2rpcmkii.dll`,
-  config: `ets2rpcmkii.ini`).
-
-## Why it is different
-
-| | ETS2rpcMKII | Typical RPC tool |
-|---|---|---|
-| Install | **one DLL + one ini** | exe + DLLs + SDK runtimes |
-| Configure | **ini, hot-reloaded in-game** | rebuild or restart |
-| Presets | **3 style presets shipped** | fixed templates |
-| Text | **handcraft every line** | fixed templates |
-| Buttons | **Get on Steam + one custom, per state** | rarely |
-| Countries | **flag badge or flag emoji of your current country** | no |
-| Crash safety | **SEH guards: internal faults never take the game down** | hope |
-| States | **13 incl. speeding, tollgate, delivered+income** | 3 to 5 |
-
-## Quick start
-
-1. **Get the DLL**: download from [Actions artifacts](../../actions)
-   (every push builds a ready bundle: DLL + ini + presets), or build:
-
-   - **No CMake?** Just run **`build_msvc.bat`** (double-click). It uses
-     Visual Studio Build Tools directly and outputs `build/ets2rpcmkii.dll`.
-   - Or the classic CMake way:
-
-   ```bash
-   cmake -S . -B build -A x64
-   cmake --build build --config Release
-   ```
-
-2. **Install** into `Steam/steamapps/common/Euro Truck Simulator 2/bin/win_x64/plugins/`
-   (CMake copies the DLL + `ets2rpcmkii.ini` + `templates/` presets there
-   automatically if that is where your game lives; `-DPLUGINS_DIR="..."`
-   overrides). The ini is pre-given, you only edit it if you want to.
-
-3. **Run**: start the **Discord desktop client**, then ETS2.
-   `game.log.txt` shows `[ETS2rpcMKII] Discord pipe connected.`
-
-### Switching presets
-
-Copy any `templates/presets/*.ini` over `ets2rpcmkii.ini` next to the DLL
-and save. The presence changes within seconds, no restart. Edit further to
-taste; delete the file to regenerate defaults.
+Ferry and train show the real crossing route (`On a ferry → Rostock`),
+not the job destination, and are held for `event_hold` seconds - the game
+never sends an "arrived" event, so the state expires on its own.
 
 ## Configuration in one minute
-
-Hot-reloaded: save, and the presence updates within seconds. The full
-reference lives in [DOCS.md](DOCS.md); the short version:
 
 ```ini
 [template]
@@ -139,116 +74,98 @@ button1_label = Get on Steam
 button1_url   = https://store.steampowered.com/app/227300/Euro_Truck_Simulator_2/
 
 [template.delivery_active]
-state        = {mass} - {distance} {distance_unit} to {dest}
-details      = {truck} - {speed} {speed_unit}
+state        = Close to {city}{country_tag} ・ {job_progress}% done
+details      = {cargo} ({mass}) ・ {distance} {distance_unit} ・ ETA {eta_clock}
 ```
 
-Three rules: an absent line keeps the smart default, `n/a` clears a field,
-anything else is your text with tokens filled. Unknown tokens vanish, so
-typos can never garble output.
+Three rules: a line you don't set keeps the smart default, `n/a` clears a
+field, anything else is your text with tokens filled.
 
-Images are fixed since v4.2: the big image is always the official ETS2
-game icon, the small badge always the truck brand logo (generic
-`generic` art for modded trucks). Image lines in the ini are
-ignored on purpose, so a broken art key can never ghost a mystery text
-line onto the profile.
+**Buttons:** max two, and you can never see your own - other people can.
+That is a Discord limitation, not a bug.
 
-### Buttons and Discord facts, verified
+Full manual, every token, every state: [DOCS.md](DOCS.md).
+Style presets in `templates/presets/` (distance, location, most-info):
+copy one over the ini and edit to taste.
 
-- **You cannot see your own buttons.** Other people see them. That is a
-  Discord limitation, not a plugin bug.
-- Max **two buttons**, label up to 32 chars, url up to 512, http(s) only.
-- There is **no official SCS Software or ETS2 Discord server or page** to
-  route presence to. SCS communicate via their forum and blog. The largest
-  community hubs are **TruckersMP** (`discord.gg/truckersmp`) and
-  **TruckSim** (`discord.gg/trucksim`); put whichever invite you like in
-  `button2_url`.
-- **The big game modal** (the card with IGDB metadata, reviews and
-  Add to Profile) is Discord-side metadata. It cannot be triggered by a
-  custom Rich Presence, only by link embeds or a verified publisher claim.
-- Rich Presence always displays under **your** application id. A presence
-  cannot masquerade as another app's official page.
+## Countries, in any game language
 
-### Country support
+The game reports city names in your UI language. On a Russian client that is
+Cyrillic (Выборг), on German it is Köln. The plugin folds every name through
+a Unicode normalizer - accents stripped, Cyrillic transliterated - and matches
+it against a built-in table of about 170 cities covering the base map plus
+Russia, the Baltics, Belarus, Black Sea, West Balkans and Greece. Your own
+`[countries]` mappings are tried first, so mod-map cities work too. If nothing
+matches, the country tokens are simply empty - never a bare parenthesis.
 
-The `{country}`, `{country_code}` and `{country_emoji}` tokens resolve
-from city names via a built-in table of about 90 ETS2 cities plus your
-own `[countries]` mappings, so your text lines can always name where
-you are driving.
+## Brands
 
-### Brands and mods
+Badges for the 7 officially licensed ETS2 brands: scania, volvo, daf, man,
+mercedes, renault, iveco. ATS brands and modded trucks get a generic lorry
+pictogram, so the badge always shows something.
 
-Built-in logo badges for the 7 officially licensed ETS2 brands: scania,
-volvo, daf, man, mercedes, renault, iveco. ATS brands (ford, mack,
-kenworth, peterbilt), modded trucks and anything unknown automatically
-get the generic `generic` lorry pictogram, so the badge always shows
-something.
+On **your own** Discord application (any id different from the built-in one)
+you can additionally map brand substrings and country flags to your own
+uploaded art. On the shared built-in application the art set is locked,
+because nobody but its owner can extend it.
 
-## Art assets
+## Install
 
-Text-only presence works with zero setup. For images:
+1. Drop `ets2rpcmkii.dll` and `ets2rpcmkii.ini` into
+   `.../Euro Truck Simulator 2/bin/win_x64/plugins/` (create it if missing).
+2. Start the **Discord desktop client**, then the game.
+3. Check `Documents/Euro Truck Simulator 2/game.log.txt`. A healthy session:
 
-```bash
-bash tools/download_assets.sh
-```
+   ```
+   [ETS2rpcMKII] v5.0.0 initialising (telemetry API 1.0).
+   [ETS2rpcMKII] Discord pipe opened, handshake sent.
+   [ETS2rpcMKII] Discord handshake accepted (READY). Presence updates are live.
+   [ETS2rpcMKII] Initialisation complete.
+   ```
 
-fetches the official ETS2 app icon, the 7 licensed ETS2 brand logos and
-a generic truck pictogram into `assets/portal/`, all background-free.
-Upload them in the Developer Portal under your application, Rich
-Presence, Art Assets.
-The asset NAME is the file name without .png (ets2.png uploads as ets2);
-the name field takes letters, numbers, underscores and hyphens only.
+Every release also ships a zip with exactly those two files.
 
-## Crash safety
+### Build it yourself
 
-- Every SCS entry point and the frame/event hooks run under **SEH guards**.
-  An internal fault is logged and swallowed, the game keeps running
-  (MinGW builds use direct calls).
-- Discord gone, quit, or never installed? Non-fatal, retried every 15 s.
-- Malformed ini? BOM handled, oversized files rejected, bad lines ignored,
-  every value defaulted.
-- Oversized or garbled IPC frames are capped and dropped; text is clamped
-  to Discord's 128 byte limit without splitting UTF-8.
+`build_msvc.bat` (Visual Studio Build Tools, Desktop C++) or CMake.
+Every push builds on GitHub Actions and uploads a ready bundle.
+The ini failsafe + schema suite (37 checks) runs on every build.
 
-## Build and CI
+## Crash safety and failsafes, exhaustively
 
-Windows, CMake 3.16 or newer, VS 2022 Build Tools (Desktop C++) or MSYS2
-MinGW-w64, or simply `build_msvc.bat`. Every push builds on GitHub Actions
-and uploads a ready bundle (DLL + pre-given ini + preset templates), see
-the [Actions tab](../../actions).
+- Missing, empty, unreadable or deleted ini → baked-in defaults, file
+  regenerated, all logged. Covered by tests.
+- Garbage ini (BOM, binary junk, no equals signs) → parser survives, every
+  lookup defaults. Covered by tests.
+- Typos and out-of-range values → named in the log (`ini: ...`), the rest of
+  the file stays live. Covered by tests.
+- Discord down, quits, or rejects a presence → non-fatal, retried every 15 s,
+  rejection reason logged once per connect.
+- Identical presence pushes are suppressed (no flicker for watchers); a
+  keepalive re-send every 60 s detects half-dead pipes.
+- NaN or infinite telemetry values from a broken mod → clamped, never printed.
+- Any internal fault → SEH-caught, logged with a rate limit, session summary
+  (minutes, push count, recovered faults) written to the log on shutdown.
 
-| Path | Role |
+## Compatibility
+
+| | |
 |---|---|
-| `src/plugin.cpp` | telemetry, states, presence assembly |
-| `src/discord_ipc.*` | small Win32 named-pipe Discord RPC client |
-| `src/config.*` | ini parser, hot reload, template engine |
-| `templates/ets2rpcmkii.ini` | pre-given default config, shipped with builds |
-| `templates/presets/` | distance, location, most-info style presets |
-| `include/scs/` | vendored SCS Telemetry SDK headers |
-| `tools/download_assets.sh` | art and flag fetcher for the portal upload |
-| `DOCS.md` | the full manual |
+| Game | ETS2 (Steam, Windows x64), tested on 1.61.1.1s |
+| Telemetry API | SCS 1.00 (headers from the 1.61 era; works back to ~1.37) |
+| Discord | desktop client, legacy `discord-ipc` pipe |
 
 ## Version history
 
-The version lives in one place: `src/plugin_version.h` (`ETS2RPCMKII_VERSION`).
-The plugin prints it to `game.log.txt` on every launch, so the log always
-tells you exactly which build is running.
-
-| Version | Name | What changed |
-|---|---|---|
-| **4.2.0** (current) | ETS2rpcMKII | Images are now fixed and no longer configurable: the big image is always the official ETS2 game icon, the small badge always the truck brand logo, with a generic `generic` pictogram for modded and unknown trucks. Image fields in the ini are ignored, so a broken art key can never ghost a mystery text line onto the profile. The `[brands]` mapping section is retired (it needed art uploads that custom URLs cannot provide) and the country flag badge is removed; `{country}` text tokens still work everywhere. Discord validation errors and handshake results are logged. |
-| 4.1.0 | ETS2rpcMKII | Rebuilt on the real official SCS Telemetry SDK headers (API 1.00, game version 1.18). Job data (cities, cargo, income, distance) now comes from the configuration event, which is where the real SDK delivers it. Safe attribute parsing with the correct `scs_named_value_t` layout. `truck.fuel` handled as liters with the ratio computed from capacity. Fines read `fine.amount` (s64), toll event is `player.tollgate.paid`. Startup logging on every step: init banner with API version, init complete, job data received, Discord connect. Registration failures are logged instead of swallowed. Ini failsafe: missing or deleted ini regenerates the baked-in defaults, covered by an automated test that runs on every build. |
-| 4.0.0 | ETS2rpcMKII | Renamed from SwiftDrive. DLL is `ets2rpcmkii.dll`, config is `ets2rpcmkii.ini`. Ships a pre-given ini with every build plus a `templates/` folder of style presets (distance, location, most_info). Get on Steam button on every preset. New tokens: `{city}`, `{distance_remaining}`, `{game_version}`, `{country_emoji}` (works even with `country_mode = 0`). Build script `build_msvc.bat` for compiling without CMake. |
-| 3.0.0 | SwiftDrive RPC | Handcrafted field templates: every presence field (state, details, images, tooltips, two buttons) settable per state with `n/a` to clear. Country flag badge mode with about 90 built-in city mappings. 13 presence states including speeding, tollgate, cargo and truck damage. SEH crash guards. Metric and imperial units. |
-| 2.x | SwiftDrive | Legacy `[templates]` text wrapper. Still parsed for compatibility today (see the v2 compat section in the config). |
-| 1.x | SwiftDrive | Initial telemetry to Discord presence over the raw named pipe. |
-
-Compatibility notes:
-
-- The ini parser still understands the old `swiftdrive.ini` style
-  `[templates]` section, but the current file name is `ets2rpcmkii.ini`.
-- Presets and the shipped ini are plain ini files; any field you do not
-  set falls back to the built-in smart defaults, so old configs keep working.
+| Version | What changed |
+|---|---|
+| **5.0.0** (current) | The foolproof release. Ini schema report: typos (`evnt_hold`), unknown template states and out-of-range values are named in game.log.txt instead of being silently ignored. Output hygiene: no line can render bare `()`, stray arrows or hanging words, whatever the ini says. Ferry/train rebuilt: timed hold plus the real crossing route from event attributes via new `{ferry_from}`/`{ferry_to}` tokens. Country detection: Unicode city folding (Cyrillic + accents) and ~170-city table incl. Russia, Baltics, Black Sea, Balkans, Greece. New tokens `{eta_clock}`, `{job_progress}`, `{fuel_l}`, `{jobs_done}`, `{state_name}`. Discord: identical-push suppression and a 60 s keepalive. Telemetry floats NaN/inf-guarded. Fault logging rate-limited; shutdown writes a session summary. Hot-reload stat throttled to 1/s. |
+| 4.2.1 | Bare-paren fix in location lines; Cyrillic/accented city matching; city table grown to ~170 cities. |
+| 4.2.0 | Images locked to the known-good set (official icon + 7 brand logos + generic); image fields in the ini ignored so a broken key can never ghost a mystery text line. |
+| 4.1.0 | Real official SCS SDK headers; ini failsafe with automated tests; verbose startup logging. |
+| 4.0.0 | Renamed from SwiftDrive; shipped ini + presets; Get on Steam button; build_msvc.bat. |
+| 3.0.0 | Handcrafted per-field, per-state templates; 13 states; SEH guards. |
+| 2.x / 1.x | SwiftDrive era. |
 
 ## License
 

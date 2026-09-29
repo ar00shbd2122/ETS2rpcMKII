@@ -13,8 +13,10 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <map>
+#include <set>
 #include <sstream>
 
 namespace cfg {
@@ -35,6 +37,7 @@ struct Store {
     std::map<std::string, FieldTemplates> stpl;            /* [template.x]   */
     std::string path;
     long long   mtime = 0;
+    long long   last_stat = 0;                             /* reload throttle */
 };
 static Store g;
 
@@ -68,7 +71,7 @@ static const char* DEFAULT_INI =
 "units = metric\n"
 "; Seconds between Discord updates (Discord throttles hard below ~5s)\n"
 "update_interval = 5\n"
-"; Seconds timed events (fine, tollgate, delivered) stay visible\n"
+"; Seconds timed events (fine, tollgate, delivered, ferry, train) stay visible\n"
 "event_hold = 30\n"
 "; 24h clock (1) or 12h AM/PM (0) for the {time} token\n"
 "use_24h = 1\n"
@@ -128,6 +131,9 @@ static const char* DEFAULT_INI =
 ";        paused, on_ferry, on_train, resting, got_fine, tollgate,\n"
 ";        cargo_damaged, truck_damaged, speeding\n"
 ";\n"
+";  v5: typo'd keys and unknown template states are reported to\n"
+";  game.log.txt as 'ini: ...' lines once per config load.\n"
+";\n"
 ";  NOTE on image keys: an image field is an ASSET KEY uploaded to\n"
 ";  your Discord application (Developer Portal -> Rich Presence ->\n"
 ";  Art Assets). A key with no art behind it does not render an\n"
@@ -156,8 +162,8 @@ static const char* DEFAULT_INI =
 ";button2_url   = https://discord.gg/truckersmp\n"
 "\n"
 "[template.delivery_active]\n"
-"state        = Close to {city} ({country_code})\n"
-"details      = {cargo} ({mass}) ・ {distance} {distance_unit}\n"
+"state        = Close to {city}{country_tag} ・ {job_progress}% done\n"
+"details      = {cargo} ({mass}) ・ {distance} {distance_unit} ・ ETA {eta_clock}\n"
 
 "\n"
 "[template.free_roam]\n"
@@ -196,13 +202,13 @@ static const char* DEFAULT_INI =
 
 "\n"
 "[template.on_ferry]\n"
-"state        = → {dest}\n"
-"details      = Crossing on a ferry\n"
+"state        = On a ferry → {ferry_to}\n"
+"details      = Crossing from {ferry_from}\n"
 
 "\n"
 "[template.on_train]\n"
-"state        = → {dest}\n"
-"details      = Rail freight\n"
+"state        = On a train → {ferry_to}\n"
+"details      = Rail freight from {ferry_from}\n"
 
 "\n"
 "[template.resting]\n"
@@ -211,7 +217,7 @@ static const char* DEFAULT_INI =
 
 "\n"
 "[template.paused]\n"
-"state        = Close to {city} ({country_code})\n"
+"state        = Close to {city}{country_tag}\n"
 "details      = {cargo} ({mass}) ・ Paused\n"
 
 "\n"
@@ -353,6 +359,8 @@ static void load_or_create() {
     }
     g.mtime = file_mtime(g.path);
     parse(std::move(text));
+    validate_schema();
+    g.last_stat = 0;                     /* allow an immediate re-stat */
 }
 
 /* ── lifecycle ──────────────────────────────────────────────── */
@@ -365,6 +373,14 @@ void init(const std::string& directory) {
 
 void maybe_reload() {
     if (g.path.empty()) return;
+
+    /* v5.0: this runs per game frame; stat the disk at most once per
+     * second. Hot reload stays instant to the human eye, the file
+     * system stops being hammered 60 times a second. */
+    long long now = (long long)GetTickCount64();
+    if (g.last_stat != 0 && now - g.last_stat < 1000) return;
+    g.last_stat = now;
+
     long long m = file_mtime(g.path);
     if (m == 0) {
         if (g.mtime != 0) {
@@ -380,6 +396,7 @@ void maybe_reload() {
         if (!text.empty()) {          /* ignore transient read failures */
             g.mtime = m;
             parse(std::move(text));
+            validate_schema();        /* warn about typos on every reload */
         }
     }
 }
@@ -475,6 +492,95 @@ std::string tpl_details(const std::string& details) {
     auto s = g.wrap.find("details");
     if (s == g.wrap.end()) return details;
     return replace_token(s->second, "{details}", details);
+}
+
+/* ── ini schema report (v5.0) ────────────────────────────────
+ * The parser forgives everything; this pass tells the user what it
+ * forgave, once per load, in plain game-log lines. Catches: unknown
+ * keys in known sections (typos), unknown template state names, and
+ * numeric values outside the accepted range (they are clamped). */
+static const char* const KNOWN_BOOLS[] = {
+    "presence.show_speed", "presence.show_fuel", "presence.show_time",
+    "presence.show_truck_badge", "behaviour.use_24h",
+};
+static const char* const KNOWN_NUMS[] = {
+    "behaviour.update_interval", "behaviour.event_hold",
+    "behaviour.speeding_threshold_pct", "behaviour.cargo_damage_threshold",
+    "behaviour.chassis_wear_threshold",
+};
+static const char* const KNOWN_STATES[] = {
+    "main_menu", "free_roam", "delivery_active", "delivery_complete",
+    "paused", "on_ferry", "on_train", "resting", "got_fine", "tollgate",
+    "cargo_damaged", "truck_damaged", "speeding",
+};
+static const char* const TEMPLATE_FIELDS[] = {
+    "state", "details", "large_image", "large_text", "small_image",
+    "small_text", "button1_label", "button1_url", "btn1_label", "btn1_url",
+    "button2_label", "button2_url", "btn2_label", "btn2_url",
+};
+
+static bool contains(const char* const* arr, size_t n, const std::string& s) {
+    for (size_t i = 0; i < n; ++i)
+        if (s == arr[i]) return true;
+    return false;
+}
+
+void validate_schema() {
+    /* known top-level keys per section */
+    static const char* const SECT_DISCORD   = "discord.";
+    static const char* const SECT_PRESENCE  = "presence.";
+    static const char* const SECT_BEHAVIOUR = "behaviour.";
+
+    for (const auto& kv : g.kv) {
+        const std::string& k = kv.first;
+        bool known =
+            (k.rfind(SECT_DISCORD, 0)   == 0 && k == "discord.application_id") ||
+            (k.rfind(SECT_PRESENCE, 0)  == 0 &&
+             contains(KNOWN_BOOLS, sizeof(KNOWN_BOOLS)  / sizeof(*KNOWN_BOOLS),  k)) ||
+            (k.rfind(SECT_BEHAVIOUR, 0) == 0 &&
+             contains(KNOWN_NUMS,  sizeof(KNOWN_NUMS)   / sizeof(*KNOWN_NUMS),   k)) ||
+            k == "behaviour.units";
+        if (known) continue;
+
+        std::string sec = k.substr(0, k.find('.'));
+        std::string key = k.substr(k.find('.') + 1);
+        std::string msg = "ini: unknown key '" + key + "' in [" + sec +
+                          "] (ignored by the plugin; check for a typo)";
+        clog(msg.c_str());
+    }
+
+    for (const auto& p : g.stpl) {
+        if (!contains(KNOWN_STATES, sizeof(KNOWN_STATES) / sizeof(*KNOWN_STATES), p.first)) {
+            std::string msg = "ini: unknown template state '[template." + p.first +
+                              "]' (valid: main_menu, free_roam, delivery_active, ...)";
+            clog(msg.c_str());
+        }
+    }
+
+    /* numeric keys outside their accepted range: the value is clamped,
+     * say so instead of letting the user wonder why 9999 does nothing */
+    struct Range { const char* key; long lo, hi; };
+    static const Range RANGES[] = {
+        { "behaviour.update_interval",          3,   3600 },
+        { "behaviour.event_hold",               0,    600 },
+        { "behaviour.speeding_threshold_pct",   1,    200 },
+        { "behaviour.cargo_damage_threshold",   1,    100 },
+        { "behaviour.chassis_wear_threshold",   1,    100 },
+    };
+    for (const auto& r : RANGES) {
+        auto it = g.kv.find(r.key);
+        if (it == g.kv.end()) continue;
+        long v = it->second.number;
+        if (v < r.lo || v > r.hi) {
+            std::string key = r.key;
+            std::string msg = "ini: " + key.substr(key.find('.') + 1) + " = " +
+                it->second.raw + " is out of range (" +
+                std::to_string(r.lo) + " to " + std::to_string(r.hi) +
+                "), the plugin uses the nearest allowed value";
+            clog(msg.c_str());
+        }
+    }
+
 }
 
 } /* namespace cfg */

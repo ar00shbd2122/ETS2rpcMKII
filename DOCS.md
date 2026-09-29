@@ -125,8 +125,8 @@ What triggers each state, and its built-in default text:
 | `delivery_active` | job in progress, engine on | En route to {dest} - {distance} left, ETA {eta} min / Delivering {cargo} ({mass}) |
 | `delivery_complete` | for `event_hold` seconds after dropping cargo | Delivered to {dest} / Job complete - earned {income} |
 | `paused` | game paused | Game paused / Game paused |
-| `on_ferry` | ferry event | Crossing to {dest} / On a ferry |
-| `on_train` | train event | Rail freight to {dest} / On a train |
+| `on_ferry` | ferry event, held for `event_hold` seconds | On a ferry → {ferry_to} / Crossing from {ferry_from} |
+| `on_train` | train event, held for `event_hold` seconds | On a train → {ferry_to} / Rail freight from {ferry_from} |
 | `resting` | job active but engine off | Taking a break near {dest} / Resting - engine off |
 | `got_fine` | for `event_hold` seconds after a fine | Fined - watch the road / Traffic fine received |
 | `tollgate` | for ~10 seconds at a tollgate | Paying the toll / Passing a tollgate |
@@ -188,14 +188,23 @@ tokens vanish silently, so a typo can never garble your profile.
 | `{country_code}` | two letter code, uppercase, e.g. RU | city unknown |
 | `{country_tag}` | ready-to-append tag, ` (RU)`, empty when unknown, so lines never end in bare parentheses | city unknown |
 | `{country_emoji}` | the flag as a real emoji | city unknown |
+| `{ferry_from}` | ferry/train crossing origin, e.g. Ostersund | not on a ferry/train |
+| `{ferry_to}` | ferry/train crossing destination | not on a ferry/train |
 | `{time}` | local clock, format from `use_24h` | never |
 | `{newline}` | line break (Discord shows one line per field, so mostly useful in tooltips) | never |
 | `{state}` `{details}` | the current default text (useful in `[template]` to decorate defaults) | never |
 
-Country resolution: a built-in table of roughly 90 ETS2 cities, and
-any extra `[countries]` mappings you add (city substring to country
-name). If nothing matches, the country tokens are empty and `{city}`
-still shows the raw city name.
+Country resolution: a built-in table of roughly 170 ETS2 cities (base map
+plus Russia, Baltics, Black Sea, West Balkans and Greece), and any extra
+`[countries]` mappings you add. City names are matched through a Unicode
+folder, so a Russian client reporting Cyrillic city names (Выборг) still
+resolves correctly. If nothing matches, the country tokens are empty and
+`{city}` still shows the raw city name.
+
+After token fill every line is tidied automatically: empty `()` from
+vanished tokens is removed, stray separators, arrows and hanging words
+like a trailing `to` are trimmed. A template can no longer render that
+garbage even by accident.
 
 ## The rules: absent, n/a, custom
 
@@ -437,7 +446,7 @@ details = {distance} {distance_unit} left
 | Profile still shows the OLD image after I re-uploaded an asset | Discord caches presence art per session. Quit Discord fully (tray icon, Quit - closing the window is not enough), start it again, then restart the game. If it still shows the old art, delete the asset in the portal and upload the file fresh under the same name. |
 | My buttons are missing | You cannot see your own buttons. Ask a friend to check. |
 | A line shows raw `{tokenn}` | Typos vanish, so a raw token means the token name is wrong but unknown tokens never print. If you truly see braces, the line came from an old cached presence: save the ini again. |
-| Country tokens are empty | The city was not matched. Add a mapping in `[countries]`, e.g. `myhometown = Germany`. |
+| Country tokens are empty | The city was not matched. The built-in table covers ~170 cities including Russia and the Baltics; add a mapping in `[countries]`, e.g. `myhometown = Germany`, for anything else. |
 | Emoji flag shows as a box | Your platform font lacks flag glyphs. Discord on desktop and mobile renders them fine; the game log does not matter. |
 | Presence stuck on one state | Check the thresholds in `[behaviour]`. A very low `cargo_damage_threshold` pins the damaged state. |
 | I broke everything | Delete `ets2rpcmkii.ini`. A fresh default is written on the next launch or reload. If you delete it while the game runs, the baked-in defaults take over instantly (the log says `ets2rpcmkii.ini disappeared`) and the file is regenerated. |

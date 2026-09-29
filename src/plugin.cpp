@@ -1,5 +1,5 @@
 /*
- * ETS2rpcMKII - Discord Rich Presence - plugin.cpp (v4.1)
+ * ETS2rpcMKII - Discord Rich Presence - plugin.cpp (v4.2)
  * Single self-contained DLL plugin for Euro Truck Simulator 2
  *
  *   Built against the real official SCS Telemetry SDK headers
@@ -91,6 +91,11 @@ struct Data {
     char    truck_model[64]         = {};
     float   fuel_capacity_l         = 0.f;
 
+    /* transport events: ferry/train crossings, filled from the
+     * gameplay event attributes (source.name / target.name) */
+    char    ferry_from[64]          = {};
+    char    ferry_to[64]            = {};
+
     /* per-frame channels */
     float   nav_distance_m          = 0.f;
     float   nav_time_min            = 0.f;
@@ -102,8 +107,6 @@ struct Data {
 
     bool    engine_on               = false;
     bool    job_active              = false;
-    bool    on_ferry                = false;
-    bool    on_train                = false;
     float   fine_amount             = 0.f;
     int64_t session_start           = 0;
 } g;
@@ -112,14 +115,30 @@ static int64_t g_fine_until      = 0;
 static int64_t g_tollgate_until  = 0;
 static int64_t g_delivered_until = 0;
 static int64_t g_delivered_income = 0;
+static int64_t g_ferry_until     = 0;
+static int64_t g_train_until     = 0;
+static uint32_t g_jobs_done      = 0;        /* deliveries this session */
 
 static State     g_state     = State::MAIN_MENU;
 static bool      g_paused    = false;
 static scs_log_t g_log       = nullptr;
 static int64_t   g_last_push = 0;
+static int64_t   g_session_t0 = 0;          /* for the shutdown summary */
 static int       g_seh_faults = 0;
+static int64_t   g_last_fault_log = 0;      /* fault-log cooldown */
+static uint64_t  g_push_count = 0;
 static bool      g_logged_cfg = false;
 static bool      g_logged_truck = false;
+
+/* v5.0: telemetry floats are guarded everywhere they are consumed.
+ * A driver crash or a mod writing NaN into a channel must never
+ * produce NaN text like 'nan km/h' on the profile. */
+static float sane_f(float v) {
+    if (v != v)             return 0.f;                 /* NaN            */
+    if (v >  3.4e38f / 4.f) return  3.4e38f / 4.f;      /* +inf, huge     */
+    if (v < -3.4e38f / 4.f) return -3.4e38f / 4.f;      /* -inf, huge neg */
+    return v;
+}
 
 /* ======================================================
    BASICS
@@ -181,9 +200,25 @@ static std::string brand_asset(const char* brand) {
     return "generic";
 }
 
-/* - countries (built-in city hints for the {country} tokens) - */
+/* - countries (built-in city hints for the {country} tokens) -
+ * Keys are given in the folded alphabet (ASCII, accents stripped,
+ * Cyrillic transliterated), so one entry matches every UI language:
+ * the Russian client's Выборг folds to vyborg and hits directly. */
 struct CityCc { const char* city; const char* cc; };
 static const CityCc CITIES[] = {
+    /* russia */ { "vyborg","ru" },{ "sankt peterburg","ru" },
+    { "peterburg","ru" },{ "moskva","ru" },{ "moscow","ru" },{ "kaliningrad","ru" },
+    { "pskov","ru" },{ "velikiye luki","ru" },{ "novgorod","ru" },{ "tver","ru" },
+    { "smolensk","ru" },{ "vitebsk","by" },
+    /* belarus */ { "minsk","by" },{ "brest","by" },{ "grodno","by" },{ "gomel","by" },
+    /* baltics */ { "tallinn","ee" },{ "tartu","ee" },{ "narva","ee" },{ "parnu","ee" },
+    { "riga","lv" },{ "daugavpils","lv" },{ "rezekne","lv" },{ "liepaja","lv" },
+    { "ventspils","lv" },{ "kaunas","lt" },{ "vilnius","lt" },{ "klaipeda","lt" },
+    { "siauliai","lt" },{ "panevezys","lt" },{ "utena","lt" },{ "daugpils","lv" },
+    /* finland */ { "helsinki","fi" },{ "tampere","fi" },{ "turku","fi" },{ "oulu","fi" },
+    { "kajaani","fi" },{ "joensuu","fi" },{ "kuopio","fi" },{ "vaasa","fi" },
+    { "rovaniemi","fi" },{ "jyvaskyla","fi" },{ "mikkeli","fi" },{ "kotka","fi" },
+    { "pori","fi" },{ "lahti","fi" },{ "lappeeranta","fi" },
     /* germany */ { "berlin","de" },{ "hamburg","de" },{ "munchen","de" },{ "munich","de" },
     { "koln","de" },{ "cologne","de" },{ "frankfurt","de" },{ "dresden","de" },{ "leipzig","de" },
     { "dortmund","de" },{ "dusseldorf","de" },{ "nurnberg","de" },
@@ -211,15 +246,22 @@ static const CityCc CITIES[] = {
     /* north & east */ { "kobenhavn","dk" },{ "copenhagen","dk" },{ "odense","dk" },{ "aalborg","dk" },
     { "stockholm","se" },{ "goteborg","se" },{ "jonkoping","se" },{ "linkoping","se" },
     { "oslo","no" },{ "kristiansand","no" },{ "stavanger","no" },{ "bergen","no" },
-    { "helsinki","fi" },{ "tampere","fi" },{ "turku","fi" },{ "oulu","fi" },
-    { "kajaani","fi" },{ "joensuu","fi" },{ "kuopio","fi" },{ "vaasa","fi" },
-    { "rovaniemi","fi" },{ "jyvaskyla","fi" },{ "mikkeli","fi" },{ "kotka","fi" },
-    { "pori","fi" },{ "lahti","fi" },{ "lappeeranta","fi" },
     { "praha","cz" },{ "prague","cz" },{ "brno","cz" },{ "plzen","cz" },{ "ostrava","cz" },
     { "warszawa","pl" },{ "warsaw","pl" },{ "krakow","pl" },{ "lodz","pl" },{ "poznan","pl" },
     { "szczecin","pl" },{ "gdansk","pl" },{ "katowice","pl" },{ "lublin","pl" },{ "bialystok","pl" },
     { "bratislava","sk" },{ "kosice","sk" },{ "budapest","hu" },{ "pecs","hu" },{ "szeged","hu" },
     { "debrecen","hu" },{ "ljubljana","si" },{ "maribor","si" },{ "koper","si" },
+    /* black sea (romania, bulgaria) */ { "bucuresti","ro" },{ "bucharest","ro" },
+    { "cluj","ro" },{ "timisoara","ro" },{ "iasi","ro" },{ "constanta","ro" },
+    { "brasov","ro" },{ "sibiu","ro" },{ "oradea","ro" },{ "craiova","ro" },
+    { "sofia","bg" },{ "sofiya","bg" },{ "plovdiv","bg" },{ "varna","bg" },
+    { "burgas","bg" },{ "ruse","bg" },{ "pleven","bg" },
+    /* west balkans */ { "zagreb","hr" },{ "split","hr" },{ "osijek","hr" },{ "rijeka","hr" },
+    { "sarajevo","ba" },{ "mostar","ba" },{ "banja luka","ba" },
+    { "beograd","rs" },{ "belgrade","rs" },{ "novi sad","rs" },{ "nis","rs" },
+    { "podgorica","me" },{ "tirana","al" },{ "durres","al" },
+    /* greece */ { "athina","gr" },{ "athens","gr" },{ "thessaloniki","gr" },
+    { "patras","gr" },{ "larissa","gr" },{ "ioannina","gr" },
 };
 
 struct CcName { const char* cc; const char* name; };
@@ -229,21 +271,111 @@ static const CcName CC_NAMES[] = {
     { "es","Spain" },{ "pt","Portugal" },{ "it","Italy" },{ "dk","Denmark" },
     { "se","Sweden" },{ "no","Norway" },{ "fi","Finland" },{ "cz","Czechia" },
     { "pl","Poland" },{ "sk","Slovakia" },{ "hu","Hungary" },{ "si","Slovenia" },
+    { "ru","Russia" },{ "by","Belarus" },{ "ee","Estonia" },{ "lv","Latvia" },
+    { "lt","Lithuania" },{ "ro","Romania" },{ "bg","Bulgaria" },{ "hr","Croatia" },
+    { "ba","Bosnia and Herzegovina" },{ "rs","Serbia" },{ "me","Montenegro" },
+    { "al","Albania" },{ "gr","Greece" },
 };
 
+/* ── city-name folding ─────────────────────────────────
+ * The game reports city names in the user's UI language: a Russian
+ * client sends Cyrillic ("Выборг"), German keeps umlauts ("Köln").
+ * Folding maps every spelling into one normalized alphabet: ASCII
+ * lowercase, accents stripped, Cyrillic transliterated. Table keys
+ * and game names both go through it, so a city matches in every
+ * locale without the user mapping anything by hand. */
+static const char* const LATIN1_FOLD[64] = {
+    "a","a","a","a","a","a","ae","c","e","e","e","e","i","i","i","i",
+    "d","n","o","o","o","o","o","", "o","u","u","u","u","y","th","ss",
+    "a","a","a","a","a","a","ae","c","e","e","e","e","i","i","i","i",
+    "d","n","o","o","o","o","o","", "o","u","u","u","u","y","th","y"
+};
+
+/* Cyrillic а..я (U+0430..U+044F); ъ and ь fold to nothing */
+static const char* const CYRILLIC_FOLD[32] = {
+    "a","b","v","g","d","e","zh","z","i","i","k","l","m","n","o","p",
+    "r","s","t","u","f","h","c","ch","sh","sch","","y","","e","yu","ya"
+};
+
+static void fold_utf8(const std::string& in, std::string& out) {
+    out.clear(); out.reserve(in.size());
+    for (size_t i = 0; i < in.size(); ) {
+        unsigned char c = (unsigned char)in[i];
+        if (c < 0x80) { out += (char)std::tolower(c); ++i; continue; }
+
+        unsigned int cp = 0; size_t len = 0;
+        if      ((c & 0xE0) == 0xC0 && i + 1 < in.size()) {
+            cp = ((unsigned)(c & 0x1F) << 6)  | ((unsigned)(unsigned char)in[i+1] & 0x3F); len = 2;
+        }
+        else if ((c & 0xF0) == 0xE0 && i + 2 < in.size()) {
+            cp = ((unsigned)(c & 0x0F) << 12) | ((unsigned)(unsigned char)in[i+1] & 0x3F) << 6
+               |  ((unsigned)(unsigned char)in[i+2] & 0x3F); len = 3;
+        }
+        else { ++i; continue; }             /* 4-byte or broken: drop */
+        i += len;
+
+        if (cp >= 0xC0 && cp <= 0xFF) {     /* Latin-1 supplement */
+            out += LATIN1_FOLD[cp - 0xC0]; continue;
+        }
+        if (cp >= 0x100 && cp <= 0x17F) {   /* Latin Extended-A */
+            unsigned int d = cp - 0x100;
+            if      (d <= 0x05) out += 'a';
+            else if (d <= 0x0D) out += 'c';
+            else if (d <= 0x11) out += 'd';
+            else if (d <= 0x1B) out += 'e';
+            else if (d <= 0x23) out += 'g';
+            else if (d <= 0x27) out += 'h';
+            else if (d <= 0x31) out += 'i';
+            else if (d <= 0x35 && d >= 0x34) out += 'j';
+            else if (d <= 0x38) out += 'k';
+            else if (d <= 0x42) out += 'l';
+            else if (d <= 0x4B) out += 'n';
+            else if (d <= 0x51) out += 'o';
+            else if (d <= 0x53) out += "oe";
+            else if (d <= 0x59) out += 'r';
+            else if (d <= 0x61) out += 's';
+            else if (d <= 0x67) out += 't';
+            else if (d <= 0x73) out += 'u';
+            else if (d <= 0x75) out += 'w';
+            else if (d <= 0x78) out += 'y';
+            else if (d <= 0x7E) out += 'z';
+            else                out += 's';
+            continue;
+        }
+        if (cp >= 0x400 && cp <= 0x4FF) {   /* Cyrillic */
+            unsigned int d = cp - 0x400;
+            if      (d == 0x01 || d == 0x51) { out += 'e'; continue; }  /* Ё ё */
+            else if (d == 0x04 || d == 0x54) { out += 'e'; continue; }  /* Є є */
+            else if (d == 0x06 || d == 0x56) { out += 'i'; continue; }  /* І і */
+            else if (d == 0x07 || d == 0x57) { out += 'i'; continue; }  /* Ї ї */
+            else if (d == 0x0E || d == 0x5E) { out += 'u'; continue; }  /* Ў ў */
+            else if (d == 0x90 || d == 0x91) { out += 'g'; continue; }  /* Ґ ґ */
+            else if (d >= 0x10 && d <= 0x4F) {
+                unsigned int idx = (d >= 0x30) ? (d - 0x30)             /* а..я lowercase */
+                                               : (d - 0x10);            /* А..Я uppercase */
+                out += CYRILLIC_FOLD[idx];
+            }
+            continue;
+        }
+        /* anything else: dropped, keeps matching deterministic */
+    }
+}
+
 static std::string norm_city(const char* city) {
-    std::string s(city);
-    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-    return s;
+    std::string out;
+    fold_utf8(city ? city : "", out);
+    return out;
 }
 
 /* City matching helper: does either known city contain the fragment? */
 static bool city_has(const std::string& fragment) {
     if (fragment.empty()) return false;
+    std::string f; fold_utf8(fragment, f);
+    if (f.empty()) return false;
     std::string dest = norm_city(g.dest_city);
     std::string src  = norm_city(g.src_city);
-    return (!dest.empty() && dest.find(fragment) != std::string::npos) ||
-           (!src.empty()  && src.find(fragment)  != std::string::npos);
+    return (!dest.empty() && dest.find(f) != std::string::npos) ||
+           (!src.empty()  && src.find(f)  != std::string::npos);
 }
 
 /* Country for the TEXT tokens ({country}, {country_code}, emoji): a
@@ -320,6 +452,105 @@ static bool is_na(std::string v) {
     return v == "n/a" || v == "na" || v == "none" || v == "-";
 }
 
+/* ── output hygiene ─────────────────────────────────────
+ * Tokens vanish when their data is missing, which can leave junk
+ * behind: empty "( )", dangling arrows, a hanging "to" at the end.
+ * Every filled line runs through this, so no template can ever
+ * render that garbage - whatever the ini says. */
+static bool is_sep_char(char c) {
+    return c == ' ' || c == '\t' || c == '-' || c == '|';
+}
+
+static void tidy_line(std::string& s) {
+    /* collapse whitespace runs */
+    std::string out; out.reserve(s.size());
+    bool sp = false;
+    for (char c : s) {
+        if (c == ' ' || c == '\t') {
+            if (!sp && !out.empty()) out += ' ';
+            sp = true;
+        } else { out += c; sp = false; }
+    }
+    s.swap(out);
+
+    for (;;) {
+        /* remove empty parenthesis pairs left by vanished tokens */
+        bool removed = false;
+        for (size_t p = s.find('('); p != std::string::npos && !removed;
+             p = s.find('(', p + 1)) {
+            size_t e = s.find(')', p);
+            if (e == std::string::npos) break;
+            size_t q = p + 1;
+            while (q < e && (s[q] == ' ' || s[q] == '\t')) ++q;
+            if (q == e) { s.erase(p, e - p + 1); removed = true; }
+            break;                      /* non-empty parens stay */
+        }
+
+        /* trim separators and separator glyphs from both ends, UTF-8
+         * aware so multibyte arrows and middle dots survive intact */
+        auto trim_front = [&]() {
+            for (;;) {
+                if (s.empty()) break;
+                if (is_sep_char(s.front())) { s.erase(0, 1); continue; }
+                if (s.compare(0, 3, "\xE2\x86\x92") == 0) {   /* arrow */
+                    s.erase(0, 3); continue;
+                }
+                if (s.compare(0, 2, "\xC2\xB7") == 0 ||       /* middle dot */
+                    s.compare(0, 3, "\xE3\x83\xBB") == 0) {   /* katakana dot */
+                    s.erase(0, s[1] == (char)0xB7 ? 2 : 3); continue;
+                }
+                break;
+            }
+        };
+        auto trim_back = [&]() {
+            for (;;) {
+                if (s.empty()) break;
+                char c0 = s.back();
+                size_t n = s.size();
+                if (is_sep_char(c0)) { s.pop_back(); continue; }
+                if (c0 == ',' || c0 == ':') { s.pop_back(); continue; }
+                if (n >= 3 && (unsigned char)c0 == 0x92 &&
+                    (unsigned char)s[n-2] == 0x86 &&
+                    (unsigned char)s[n-3] == 0xE2) {            /* arrow */
+                    s.resize(n - 3); continue;
+                }
+                if (n >= 2 && (unsigned char)c0 == 0xB7 &&
+                    (unsigned char)s[n-2] == 0xC2) {            /* middle dot */
+                    s.resize(n - 2); continue;
+                }
+                if (n >= 3 && (unsigned char)c0 == 0xBB &&
+                    (unsigned char)s[n-2] == 0x83 &&
+                    (unsigned char)s[n-3] == 0xE3) {            /* katakana dot */
+                    s.resize(n - 3); continue;
+                }
+                break;
+            }
+        };
+
+        size_t before = s.size();
+        trim_front();
+        trim_back();
+
+        /* no line may end on a hanging preposition */
+        static const char* const HANGERS[] =
+            { " to", " near", " in", " at", " of", " from", " through", " on" };
+        for (const char* h : HANGERS) {
+            size_t hl = strlen(h);
+            if (s.size() > hl && s.compare(s.size() - hl, hl, h) == 0)
+                s.resize(s.size() - hl);
+        }
+
+        if (s.size() != before) continue;   /* removals may expose new junk */
+        break;
+    }
+
+    /* a line made only of separators is no line at all */
+    bool only_sep = !s.empty();
+    for (char c : s)
+        if (!is_sep_char(c) && c != '(' && c != ')') { only_sep = false; break; }
+    if (only_sep) s.clear();
+}
+
 /* - formatters ---------------------------------------------- */
 static std::string fmt_mass(float kg, bool imperial) {
     char buf[40];
@@ -373,8 +604,8 @@ static State resolve() {
     if (now < g_fine_until)                      return State::GOT_FINE;
 
     if (g_paused)                                return State::PAUSED;
-    if (g.on_ferry)                              return State::ON_FERRY;
-    if (g.on_train)                              return State::ON_TRAIN;
+    if (now < g_ferry_until)                     return State::ON_FERRY;
+    if (now < g_train_until)                     return State::ON_TRAIN;
 
     if (g.engine_on && g.speed_limit_kmh > 0.f) {
         float limit = g.speed_limit_kmh * (1.f + cfg::speed_limit_pct() / 100.f);
@@ -461,6 +692,25 @@ static void build_presence() {
     tok["time"]           = fmt_clock(cfg::use_24h());
     tok["eta"]            = g.nav_time_min > 0.f
                           ? std::to_string((int)std::lround(g.nav_time_min)) : "";
+    /* v5.0: arrival as a wall-clock time, e.g. 17:45 (12h style honours use_24h) */
+    if (g.nav_time_min > 0.f) {
+        time_t eta_t = time(nullptr) + (time_t)(g.nav_time_min * 60.f);
+        struct tm eta_lt; localtime_s(&eta_lt, &eta_t);
+        char ebuf[16];
+        if (cfg::use_24h()) snprintf(ebuf, sizeof(ebuf), "%02d:%02d", eta_lt.tm_hour, eta_lt.tm_min);
+        else { int h = eta_lt.tm_hour % 12; if (!h) h = 12;
+               snprintf(ebuf, sizeof(ebuf), "%d:%02d %s", h, eta_lt.tm_min, eta_lt.tm_hour < 12 ? "AM" : "PM"); }
+        tok["eta_clock"]  = ebuf;
+    } else tok["eta_clock"] = "";
+    /* v5.0: route completion 0..100 %, planned distance vs remaining */
+    if (g.planned_distance_km > 1.f && dist_m > 0.f) {
+        float done = 1.f - (dist_m / 1000.f) / g.planned_distance_km;
+        if (done < 0.f) done = 0.f; if (done > 1.f) done = 1.f;
+        tok["job_progress"] = std::to_string((int)(done * 100.f));
+    } else tok["job_progress"] = "";
+    tok["fuel_l"]        = std::to_string((int)std::lround(g.fuel_l));
+    tok["jobs_done"]     = std::to_string(g_jobs_done);
+    tok["state_name"]    = state_key(g_state);
     tok["income"]         = (g.income > 0 ? g.income : g_delivered_income) > 0
                           ? fmt_money(g.income > 0 ? g.income : g_delivered_income) : "";
     tok["country"]        = cc.empty() ? "" : country_name(cc);
@@ -473,6 +723,8 @@ static void build_presence() {
     tok["country_flag"]   = cc.empty() ? "" : "flag_" + cc;
     tok["country_emoji"]  = cc.empty() ? "" : country_emoji(cc);
     tok["city"]           = g.dest_city[0] ? g.dest_city : g.src_city;
+    tok["ferry_from"]     = g.ferry_from;
+    tok["ferry_to"]       = g.ferry_to;
     tok["game_version"]   = "";
     tok["newline"]        = "\n";
 
@@ -511,13 +763,17 @@ static void build_presence() {
         break;
 
     case State::ON_FERRY:
-        r.state = "Crossing to {dest}";
-        r.details = "On a ferry";
+        r.state = g.ferry_to[0] ? "On a ferry → {ferry_to}"
+                                : "On a ferry";
+        r.details = g.ferry_from[0]
+            ? "Crossing from {ferry_from}" : "Crossing the water";
         break;
 
     case State::ON_TRAIN:
-        r.state = "Rail freight to {dest}";
-        r.details = "On a train";
+        r.state = g.ferry_to[0] ? "On a train → {ferry_to}"
+                                : "On a train";
+        r.details = g.ferry_from[0]
+            ? "Rail freight from {ferry_from}" : "Rail freight";
         break;
 
     case State::RESTING:
@@ -583,6 +839,13 @@ static void build_presence() {
         r.small_text  = "{truck} ・ {speed} {speed_unit}";
     }
 
+    /* the ferry/train routes come from the gameplay event and would
+     * otherwise leak a stale crossing into later states via templates */
+    if (g_state != State::ON_FERRY && g_state != State::ON_TRAIN) {
+        tok["ferry_from"].clear();
+        tok["ferry_to"].clear();
+    }
+
     /* country badge on own apps: user flag art wins over the brand
      * logo whenever the location is known and mapped */
     const std::string flag_asset = country_flag_asset();
@@ -603,8 +866,14 @@ static void build_presence() {
         r.small_text == r.small_image)
         r.small_text.clear();
 
-    /* - fill tokens, clamp to Discord limits ----------- */
-    auto fill = [&](std::string s) { return clamped(eval(s, tok), 128); };
+    /* - fill tokens, clamp to Discord limits -----------
+     * Every line is tidied after the fill: collapsed spaces, removed
+     * empty parens, trimmed separator junk, no hanging prepositions. */
+    auto fill = [&](std::string s) {
+        std::string t = eval(s, tok);
+        tidy_line(t);
+        return clamped(t, 128);
+    };
     discord_ipc::Presence p;
     p.state       = fill(r.state);
     p.details     = fill(r.details);
@@ -626,6 +895,7 @@ static void push() {
     int64_t now = (int64_t)time(nullptr);
     if (now - g_last_push < cfg::update_interval()) return;
     g_last_push = now;
+    ++g_push_count;
     build_presence();
 }
 
@@ -650,15 +920,15 @@ static void rds64(const scs_value_t* v, int64_t& dst) {
                                       const scs_value_t* v, const scs_context_t)
 
 CB(cb_speed)     { if (v && v->type==SCS_VALUE_TYPE_float)
-                       g.speed_kmh = v->value_float.value * 3.6f;              }
+                       g.speed_kmh = sane_f(v->value_float.value) * 3.6f;      }
 CB(cb_speedlim)  { if (v && v->type==SCS_VALUE_TYPE_float)
-                       g.speed_limit_kmh = v->value_float.value * 3.6f;        }
-CB(cb_fuel)      { rdflt(v, g.fuel_l);                                        }
-CB(cb_w_chassis) { rdflt(v, g.wear_chassis);                                  }
+                       g.speed_limit_kmh = sane_f(v->value_float.value) * 3.6f;}
+CB(cb_fuel)      { rdflt(v, g.fuel_l);          g.fuel_l        = sane_f(g.fuel_l);        }
+CB(cb_w_chassis) { rdflt(v, g.wear_chassis);    g.wear_chassis  = sane_f(g.wear_chassis);  }
 CB(cb_engine)    { rdblm(v, g.engine_on);                                     }
-CB(cb_navdist)   { rdflt(v, g.nav_distance_m);                                }
-CB(cb_navtime)   { rdflt(v, g.nav_time_min);                                  }
-CB(cb_cargodmg)  { rdflt(v, g.cargo_damage);                                  }
+CB(cb_navdist)   { rdflt(v, g.nav_distance_m);  g.nav_distance_m = sane_f(g.nav_distance_m); }
+CB(cb_navtime)   { rdflt(v, g.nav_time_min);    g.nav_time_min   = sane_f(g.nav_time_min);   }
+CB(cb_cargodmg)  { rdflt(v, g.cargo_damage);    g.cargo_damage   = sane_f(g.cargo_damage);   }
 #undef CB
 
 /* configuration event: carries job + truck identity in the real SDK */
@@ -722,6 +992,8 @@ static void gameplay_impl(const scs_telemetry_gameplay_event_t* gev) {
         g.src_city[0] = '\0';
         g.cargo_name[0] = '\0';
         g.planned_distance_km = 0.f;
+        g_ferry_until = 0;
+        g_train_until = 0;
         /* the delivery pay arrives as the "revenue" attribute */
         if (gev->attributes) {
             for (const scs_named_value_t* a = gev->attributes; a->name; ++a) {
@@ -733,6 +1005,7 @@ static void gameplay_impl(const scs_telemetry_gameplay_event_t* gev) {
             }
         }
         g_delivered_until = now + hold;
+        ++g_jobs_done;
     }
     else if (!strcmp(id, SCS_TELEMETRY_GAMEPLAY_EVENT_job_cancelled)) {
         g.job_active = false;
@@ -741,6 +1014,8 @@ static void gameplay_impl(const scs_telemetry_gameplay_event_t* gev) {
         g.src_city[0] = '\0';
         g.cargo_name[0] = '\0';
         g.planned_distance_km = 0.f;
+        g_ferry_until = 0;
+        g_train_until = 0;
     }
     else if (!strcmp(id, SCS_TELEMETRY_GAMEPLAY_EVENT_player_fined)) {
         g_fine_until = now + hold;
@@ -760,11 +1035,29 @@ static void gameplay_impl(const scs_telemetry_gameplay_event_t* gev) {
     else if (!strcmp(id, SCS_TELEMETRY_GAMEPLAY_EVENT_player_tollgate_paid)) {
         g_tollgate_until = now + 10;
     }
-    else if (!strcmp(id, SCS_TELEMETRY_GAMEPLAY_EVENT_player_use_ferry)) {
-        g.on_ferry = true;  g.on_train = false;
-    }
-    else if (!strcmp(id, SCS_TELEMETRY_GAMEPLAY_EVENT_player_use_train)) {
-        g.on_train = true;  g.on_ferry = false;
+    else if (!strcmp(id, SCS_TELEMETRY_GAMEPLAY_EVENT_player_use_ferry) ||
+             !strcmp(id, SCS_TELEMETRY_GAMEPLAY_EVENT_player_use_train)) {
+        /* Ferry and train events fire when the crossing STARTS. The game
+         * never sends an end event, so the state is held for event_hold
+         * seconds (configurable) and then must expire on its own. The
+         * real source/target names arrive as event attributes; the job
+         * destination has nothing to do with the crossing route. */
+        const bool is_ferry = (id[12] == 'f');   /* player.use.ferry */
+        g.ferry_from[0] = '\0';
+        g.ferry_to[0]   = '\0';
+        if (gev->attributes) {
+            for (const scs_named_value_t* a = gev->attributes; a->name; ++a) {
+                if      (!strcmp(a->name, SCS_TELEMETRY_GAMEPLAY_EVENT_ATTRIBUTE_source_name) &&
+                         a->value.type == SCS_VALUE_TYPE_string && a->value.value_string.value)
+                    rdstr(&a->value, g.ferry_from, sizeof(g.ferry_from));
+                else if (!strcmp(a->name, SCS_TELEMETRY_GAMEPLAY_EVENT_ATTRIBUTE_target_name) &&
+                         a->value.type == SCS_VALUE_TYPE_string && a->value.value_string.value)
+                    rdstr(&a->value, g.ferry_to,   sizeof(g.ferry_to));
+            }
+        }
+        const int64_t until = now + (hold > 0 ? hold : 1);
+        if (is_ferry) { g_ferry_until = until; g_train_until = 0; }
+        else          { g_train_until = until; g_ferry_until = 0; }
     }
 }
 
@@ -800,9 +1093,14 @@ static void frame_impl() {
  * MSVC only, MinGW builds call the impls directly. */
 static void seh_fault(const char* where) {
     ++g_seh_faults;
-    if (g_seh_faults <= 3) {
+    /* v5.0: a fault in a hot loop could log-spam the game file; only
+     * the first three, and at most one per minute after that */
+    int64_t now = (int64_t)time(nullptr);
+    if (g_seh_faults <= 3 || now - g_last_fault_log >= 60) {
+        g_last_fault_log = now;
         char buf[128];
-        snprintf(buf, sizeof(buf), "[ETS2rpcMKII] recovered from internal fault in %s", where);
+        snprintf(buf, sizeof(buf), "[ETS2rpcMKII] recovered from internal fault in %s (total %d)",
+                 where, g_seh_faults);
         log_msg(buf);
     }
 }
@@ -886,6 +1184,7 @@ static SCSAPI_RESULT init_impl(const scs_u32_t version,
     }
 
     g.session_start = (int64_t)time(nullptr);
+    g_session_t0    = g.session_start;
     cfg::init(dll_directory());
 
     const uint64_t app = cfg::app_id() ? cfg::app_id() : FALLBACK_APP_ID;
@@ -936,7 +1235,16 @@ extern "C" SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version,
 static void shutdown_impl() {
     discord_ipc::clear();
     discord_ipc::disconnect();
-    log_msg("[ETS2rpcMKII] Shutdown.");
+
+    /* v5.0: one-line session summary, so a user reporting a problem
+     * pastes something diagnostic instead of nothing */
+    int64_t now = (int64_t)time(nullptr);
+    long mins = g_session_t0 ? (long)((now - g_session_t0) / 60) : 0;
+    char buf[160];
+    snprintf(buf, sizeof(buf),
+             "[ETS2rpcMKII] Session: %ld min, %llu presence updates, %d recovered faults. Shutdown.",
+             mins, (unsigned long long)g_push_count, g_seh_faults);
+    log_msg(buf);
 }
 
 extern "C" SCSAPI_VOID scs_telemetry_shutdown() {

@@ -45,8 +45,18 @@ void init(const std::string& directory);
  * or nullptr to disable. */
 void set_log_callback(void (*fn)(const char* msg));
 
-/* Re-read the ini if it changed on disk. Cheap when unchanged. */
+/* Re-read the ini if it changed on disk. Stats the file at most
+ * once per second (the hot-reload path runs per game frame). */
 void maybe_reload();
+
+/* ── ini schema report (v5.0) ───────────────────────────────
+ * Catches the classic mistakes the parser silently forgave before:
+ * unknown keys (typos like 'evnt_hold = 30'), unknown template state
+ * names, and values that get silently clamped. Each finding is
+ * logged once per config load as
+ *   [ETS2rpcMKII] ini: <what> '<key>' (...)
+ * A warning never blocks: the rest of the ini stays live. */
+void validate_schema();
 
 /* ── [discord] ───────────────────────────────────────────── */
 uint64_t app_id();

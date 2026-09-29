@@ -61,6 +61,8 @@ static void (*g_log_cb)(const char*) = nullptr;
 static bool     g_broken_logged = false;
 static bool     g_error_logged  = false;   /* log one rejection per connect,
                                               not one per push (5 s spam) */
+static std::string g_last_activity;        /* last accepted activity JSON */
+static int64_t     g_last_send = 0;        /* last successful write, for keepalive */
 
 static void dlog(const char* msg) { if (g_log_cb) g_log_cb(msg); }
 
@@ -111,6 +113,7 @@ static void close_pipe() {
         CloseHandle(g_pipe);
         g_pipe = INVALID_HANDLE_VALUE;
     }
+    g_last_activity.clear();
 }
 
 /* Write a full frame: op(4, LE) + len(4, LE) + payload.
@@ -197,6 +200,7 @@ bool connect(uint64_t application_id) {
     g_last_try = now_s();
     g_broken_logged = false;
     g_error_logged  = false;
+    g_last_activity.clear();
     return true;
 }
 
@@ -263,11 +267,23 @@ bool set(const Presence& p) {
 
     act += "}";
 
+    /* v5.0: skip identical pushes. Discord re-renders the profile card
+     * even when nothing changed, which needlessly flickers badges and
+     * timers for people watching the profile. The state only goes out
+     * when the activity actually differs from the last accepted one. */
+    if (act == g_last_activity) return true;
+
     std::string frame = "{\"cmd\":\"SET_ACTIVITY\",\"args\":{\"pid\":" +
         std::to_string((unsigned long long)GetCurrentProcessId()) +
         ",\"activity\":" + act + "},\"nonce\":" + jstr(nonce) + "}";
 
-    return write_frame(1, frame);
+    if (write_frame(1, frame)) {
+        g_last_activity = act;
+        g_last_send     = now_s();
+        return true;
+    }
+    g_last_activity.clear();
+    return false;
 }
 
 bool clear() {
@@ -295,6 +311,19 @@ void pump(uint64_t application_id) {
     }
 
     drain_inbound();
+
+    /* v5.0: keepalive. While the game idles on a static screen the
+     * activity never changes, so nothing is written for minutes;
+     * re-send the last known activity at least once a minute so a
+     * half-dead pipe is detected and Discord keeps the profile. */
+    if (!g_last_activity.empty() && now_s() - g_last_send >= 60) {
+        char nonce[32];
+        snprintf(nonce, sizeof(nonce), "%d", ++g_nonce);
+        std::string frame = "{\"cmd\":\"SET_ACTIVITY\",\"args\":{\"pid\":" +
+            std::to_string((unsigned long long)GetCurrentProcessId()) +
+            ",\"activity\":" + g_last_activity + "},\"nonce\":" + jstr(nonce) + "}";
+        if (write_frame(1, frame)) g_last_send = now_s();
+    }
 }
 
 void set_log_callback(void (*fn)(const char* msg)) { g_log_cb = fn; }
