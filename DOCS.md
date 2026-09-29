@@ -157,6 +157,9 @@ tokens vanish silently, so a typo can never garble your profile.
 | `{distance_remaining}` | same value as `{distance}` (alias) | no route |
 | `{distance_unit}` | km or mi | never |
 | `{eta}` | minutes of driving left | no route |
+| `{eta_clock}` | arrival as wall-clock time, e.g. 17:45 | no route |
+| `{job_progress}` | route completion percentage, 0 to 100 | unknown baseline |
+| `{progress_tag}` | ready-to-append `・ 62% done`, empty when the percentage is unknown, so a line never ends in a bare `% done` | unknown baseline |
 | `{income}` | job pay with thousands separators | no job |
 
 ### Driving

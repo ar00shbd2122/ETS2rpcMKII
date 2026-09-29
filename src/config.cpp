@@ -162,7 +162,7 @@ static const char* DEFAULT_INI =
 ";button2_url   = https://discord.gg/truckersmp\n"
 "\n"
 "[template.delivery_active]\n"
-"state        = Close to {city}{country_tag} ・ {job_progress}% done\n"
+"state        = Close to {city}{country_tag}{progress_tag}\n"
 "details      = {cargo} ({mass}) ・ {distance} {distance_unit} ・ ETA {eta_clock}\n"
 
 "\n"

@@ -113,6 +113,9 @@ int main() {
                                                "2f. regenerated file: ferry/train templates use real crossing names");
         check(text.find("({country_code})") == std::string::npos,
                                                "2g. regenerated file: no raw ( country_code ) parens left anywhere");
+        check(text.find("{job_progress}% done") == std::string::npos &&
+              text.find("{progress_tag}") != std::string::npos,
+                                               "2h. v5.0.1: no static '% done' suffix; composite {progress_tag} used");
     }
 
     /* 3. valid ini on disk: its values must win over the defaults */

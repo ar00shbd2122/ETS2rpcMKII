@@ -84,6 +84,7 @@ struct Data {
     char    src_city[64]            = {};
     char    src_company[64]         = {};
     float   planned_distance_km     = 0.f;
+    float   job_start_distance_m    = 0.f;   /* v5.0.1 progress baseline */
     int64_t income                  = 0;
 
     /* truck config */
@@ -702,12 +703,26 @@ static void build_presence() {
                snprintf(ebuf, sizeof(ebuf), "%d:%02d %s", h, eta_lt.tm_min, eta_lt.tm_hour < 12 ? "AM" : "PM"); }
         tok["eta_clock"]  = ebuf;
     } else tok["eta_clock"] = "";
-    /* v5.0: route completion 0..100 %, planned distance vs remaining */
-    if (g.planned_distance_km > 1.f && dist_m > 0.f) {
-        float done = 1.f - (dist_m / 1000.f) / g.planned_distance_km;
+    /* v5.0.1: route completion 0..100 %, planned distance vs remaining.
+     * planned_distance_km is NOT always delivered by the game (several
+     * 1.6x job configurations omit it entirely), so when it is missing
+     * the remaining distance at job start is snapshotted as the baseline
+     * instead. The percentage therefore always has a real denominator. */
+    if (g.job_start_distance_m <= 0.f && g.planned_distance_km > 1.f)
+        g.job_start_distance_m = g.planned_distance_km * 1000.f;
+    if (g.job_start_distance_m <= 0.f && g.nav_distance_m > 1000.f && g.job_active)
+        g.job_start_distance_m = g.nav_distance_m;   /* fallback baseline */
+    if (g.job_start_distance_m > 1.f && dist_m > 0.f && g.job_active) {
+        float done = 1.f - dist_m / g.job_start_distance_m;
         if (done < 0.f) done = 0.f; if (done > 1.f) done = 1.f;
         tok["job_progress"] = std::to_string((int)(done * 100.f));
-    } else tok["job_progress"] = "";
+    } else {
+        tok["job_progress"] = "";
+    }
+    /* composite tag: " ・ 62% done" when the percentage is real, empty
+     * otherwise, so a template can never print a dangling '% done' */
+    tok["progress_tag"] = tok["job_progress"].empty()
+        ? "" : " \u00b7 " + tok["job_progress"] + "% done";
     tok["fuel_l"]        = std::to_string((int)std::lround(g.fuel_l));
     tok["jobs_done"]     = std::to_string(g_jobs_done);
     tok["state_name"]    = state_key(g_state);
@@ -992,6 +1007,7 @@ static void gameplay_impl(const scs_telemetry_gameplay_event_t* gev) {
         g.src_city[0] = '\0';
         g.cargo_name[0] = '\0';
         g.planned_distance_km = 0.f;
+        g.job_start_distance_m = 0.f;
         g_ferry_until = 0;
         g_train_until = 0;
         /* the delivery pay arrives as the "revenue" attribute */
@@ -1014,6 +1030,7 @@ static void gameplay_impl(const scs_telemetry_gameplay_event_t* gev) {
         g.src_city[0] = '\0';
         g.cargo_name[0] = '\0';
         g.planned_distance_km = 0.f;
+        g.job_start_distance_m = 0.f;
         g_ferry_until = 0;
         g_train_until = 0;
     }
