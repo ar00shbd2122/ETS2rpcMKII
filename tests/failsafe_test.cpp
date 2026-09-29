@@ -116,6 +116,11 @@ int main() {
         check(text.find("{job_progress}% done") == std::string::npos &&
               text.find("{progress_tag}") != std::string::npos,
                                                "2h. v5.0.1: no static '% done' suffix; composite {progress_tag} used");
+        check(text.find("{city}") == std::string::npos ||
+              text.find("{src}") != std::string::npos,
+                                               "2i. v5.0.2: default lines use the honest {src} -> {dest} route, not a fake city");
+        check(text.find("({mass})") == std::string::npos,
+                                               "2j. v5.0.2: paused default carries no static ({mass}) that renders as (0 kg)");
     }
 
     /* 3. valid ini on disk: its values must win over the defaults */

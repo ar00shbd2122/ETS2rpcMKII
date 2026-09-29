@@ -668,8 +668,14 @@ static void build_presence() {
      * brand-only: flags would need per-country art we cannot assume. */
     std::string cc = country_text_cc();
 
-    tok["cargo"]          = g.cargo_name;
-    tok["mass"]           = fmt_mass(g.cargo_mass_kg, imp);
+    /* v5.0.2: job-bound tokens stay EMPTY when there is no job (or no
+     * data): pausing in free-roam must not print "(0 kg)" or a nameless
+     * cargo. A template with a static "({mass})" therefore renders
+     * "()" in free-roam, which tidy_line() strips - the honest output
+     * is nothing, not a fake zero. */
+    tok["cargo"]          = g.job_active ? g.cargo_name : "";
+    tok["mass"]           = (g.job_active && g.cargo_mass_kg > 1.f)
+                          ? fmt_mass(g.cargo_mass_kg, imp) : "";
     tok["dest"]           = g.dest_city;
     tok["src"]            = g.src_city;
     tok["company"]        = g.dest_company[0] ? g.dest_company : g.src_company;
