@@ -162,7 +162,7 @@ static const char* DEFAULT_INI =
 ";button2_url   = https://discord.gg/truckersmp\n"
 "\n"
 "[template.delivery_active]\n"
-"state        = Close to {city}{country_tag}{progress_tag}\n"
+"state        = {src} → {dest}{progress_tag}\n"
 "details      = {cargo} ({mass}) ・ {distance} {distance_unit} ・ ETA {eta_clock}\n"
 
 "\n"
@@ -183,7 +183,7 @@ static const char* DEFAULT_INI =
 "\n"
 "[template.got_fine]\n"
 "state        = Fined €{fine}\n"
-"details      = Watch the road near {city}\n"
+"details      = Watch the road\n"
 
 "\n"
 "[template.tollgate]\n"
@@ -197,7 +197,7 @@ static const char* DEFAULT_INI =
 
 "\n"
 "[template.truck_damaged]\n"
-"state        = {truck} ・ {damage}% wear\n"
+"state        = {truck} ・ {wear}% wear\n"
 "details      = Find a garage soon\n"
 
 "\n"
@@ -212,13 +212,13 @@ static const char* DEFAULT_INI =
 
 "\n"
 "[template.resting]\n"
-"state        = Resting near {city}{country_tag}\n"
+"state        = Resting before {dest}\n"
 "details      = Engine off ・ {time}\n"
 
 "\n"
 "[template.paused]\n"
-"state        = Close to {city}{country_tag}\n"
-"details      = {cargo} ({mass}) ・ Paused\n"
+"state        = {src} → {dest}\n"
+"details      = Paused\n"
 
 "\n"
 "[template.main_menu]\n"

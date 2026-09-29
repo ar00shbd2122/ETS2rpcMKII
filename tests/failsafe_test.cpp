@@ -86,6 +86,11 @@ int main() {
         check(cfg::any_template_set(),         "1f. missing ini: handcrafted templates parsed");
         check(cfg::state_template("delivery_active").details.find("{mass}") != std::string::npos,
                                                "1g. missing ini: per-state default template loaded");
+        check(cfg::state_template("delivery_active").state.find("{src}") != std::string::npos &&
+              cfg::state_template("delivery_active").state.find("Close to") == std::string::npos,
+                                               "1m. v5.0.3: baked-in delivery line is the honest {src} -> {dest} route");
+        check(cfg::state_template("paused").details == "Paused",
+                                               "1n. v5.0.3: baked-in paused line carries no ({mass}) that renders as (0 kg)");
         check(g_log.find("not found") != std::string::npos,
                                                "1h. missing ini: fallback logged");
     }

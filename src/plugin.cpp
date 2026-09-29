@@ -97,6 +97,13 @@ struct Data {
     char    ferry_from[64]          = {};
     char    ferry_to[64]            = {};
 
+    /* v5.0.2: last-job snapshot. The delivered/cancelled events wipe the
+     * live job buffers before the delivery_complete state renders, so
+     * cargo and cities are remembered here for the completion card. */
+    char    last_cargo[64]          = {};
+    char    last_dest[64]           = {};
+    char    last_src[64]            = {};
+
     /* per-frame channels */
     float   nav_distance_m          = 0.f;
     float   nav_time_min            = 0.f;
@@ -676,12 +683,26 @@ static void build_presence() {
     tok["cargo"]          = g.job_active ? g.cargo_name : "";
     tok["mass"]           = (g.job_active && g.cargo_mass_kg > 1.f)
                           ? fmt_mass(g.cargo_mass_kg, imp) : "";
+
+    /* v5.0.2: delivery_complete renders AFTER the delivered event wiped
+     * the job buffers, so {cargo}/{dest} would be empty exactly when the
+     * completion card needs them. Both are snapshotted at event time. */
+    tok["cargo"]          = tok["cargo"].empty() ? g_last_cargo : tok["cargo"];
+    tok["dest"]           = g.dest_city[0] ? g.dest_city : g_last_dest;
+    tok["src"]            = g.src_city[0]  ? g.src_city  : g_last_src;
     tok["dest"]           = g.dest_city;
     tok["src"]            = g.src_city;
     tok["company"]        = g.dest_company[0] ? g.dest_company : g.src_company;
-    tok["distance"]       = fmt_distance(dist_m, imp, &dist_unit);
-    tok["distance_remaining"] = tok["distance"];
+    /* v5.0.2: with no route (free-roam, menus) the honest value is
+     * nothing, not a fabricated "0 km". */
     tok["distance_unit"]  = dist_unit;
+    if (dist_m > 0.f) {
+        tok["distance"]           = fmt_distance(dist_m, imp, &dist_unit);
+        tok["distance_remaining"] = tok["distance"];
+    } else {
+        tok["distance"].clear();
+        tok["distance_remaining"].clear();
+    }
     tok["speed"]          = fmt_speed(g.speed_kmh, imp, &spd_unit);
     tok["speed_unit"]     = spd_unit;
     tok["speed_limit"]    = g.speed_limit_kmh > 0.f
@@ -691,6 +712,10 @@ static void build_presence() {
     tok["fuel"]           = std::to_string((int)std::lround(
                             (g.fuel_capacity_l > 0.f ? g.fuel_l / g.fuel_capacity_l : 0.f) * 100.f));
     tok["damage"]         = std::to_string((int)std::lround(g.cargo_damage * 100.f));
+    /* v5.0.2: chassis wear had no token of its own, so truck_damaged
+     * templates showed the CARGO damage percentage instead. {wear} is
+     * the chassis/truck number; {damage} stays cargo-only. */
+    tok["wear"]           = std::to_string((int)std::lround(g.wear_chassis * 100.f));
     tok["fine"]           = g.fine_amount > 0.f ? fmt_money((int64_t)g.fine_amount) : "";
     tok["brand"]          = g.truck_brand;
     tok["model"]          = g.truck_model;
@@ -976,6 +1001,10 @@ static void config_impl(const scs_telemetry_configuration_t* info) {
 
     if (saw_job_dest && !g.job_active) {
         g.job_active = true;   /* a job config appeared: delivery is on */
+        g.last_cargo[0] = '\0';   /* fresh job: the old snapshot must
+        g.last_dest[0]  = '\0';      never leak into the new card */
+        g.last_src[0]   = '\0';
+        g.job_start_distance_m = 0.f;
         if (!g_logged_cfg) { g_logged_cfg = true; log_msg("[ETS2rpcMKII] Job data received from configuration."); }
     }
 
@@ -1006,6 +1035,11 @@ static void gameplay_impl(const scs_telemetry_gameplay_event_t* gev) {
     const int64_t hold = cfg::event_hold();
 
     if (!strcmp(id, SCS_TELEMETRY_GAMEPLAY_EVENT_job_delivered)) {
+        /* snapshot BEFORE wiping: the completion card still needs
+         * cargo and the route it was hauled on */
+        strncpy(g.last_cargo, g.cargo_name, sizeof(g.last_cargo) - 1);
+        strncpy(g.last_dest,  g.dest_city,  sizeof(g.last_dest)  - 1);
+        strncpy(g.last_src,   g.src_city,   sizeof(g.last_src)   - 1);
         g.job_active = false;
         g.income = 0;
         g_delivered_income = 0;
@@ -1030,6 +1064,9 @@ static void gameplay_impl(const scs_telemetry_gameplay_event_t* gev) {
         ++g_jobs_done;
     }
     else if (!strcmp(id, SCS_TELEMETRY_GAMEPLAY_EVENT_job_cancelled)) {
+        strncpy(g.last_cargo, g.cargo_name, sizeof(g.last_cargo) - 1);
+        strncpy(g.last_dest,  g.dest_city,  sizeof(g.last_dest)  - 1);
+        strncpy(g.last_src,   g.src_city,   sizeof(g.last_src)   - 1);
         g.job_active = false;
         g.income = 0;
         g.dest_city[0] = '\0';
