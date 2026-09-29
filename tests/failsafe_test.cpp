@@ -111,8 +111,9 @@ int main() {
                                                "2c. regenerated file: [discord] application_id kept");
         check(text.find("[countries]") != std::string::npos,
                                                "2d. regenerated file: [countries] section kept");
-        check(text.find("Close to {city}{country_tag}") != std::string::npos,
-                                               "2e. regenerated file: location lines use {country_tag} (no bare-paren risk)");
+        check(text.find("Close to") == std::string::npos &&
+              text.find("{country_tag}") != std::string::npos,
+                                               "2e. v5.0.2: no fake 'Close to' line; {country_tag} still used where it is safe");
         check(text.find("{ferry_to}") != std::string::npos &&
               text.find("{ferry_from}") != std::string::npos,
                                                "2f. regenerated file: ferry/train templates use real crossing names");
@@ -124,8 +125,8 @@ int main() {
         check(text.find("{city}") == std::string::npos ||
               text.find("{src}") != std::string::npos,
                                                "2i. v5.0.2: default lines use the honest {src} -> {dest} route, not a fake city");
-        check(text.find("({mass})") == std::string::npos,
-                                               "2j. v5.0.2: paused default carries no static ({mass}) that renders as (0 kg)");
+        check(text.find("[template.paused]\nstate        = {src} \xe2\x86\x92 {dest}\ndetails      = Paused") != std::string::npos,
+                                               "2j. v5.0.2: paused default is route + Paused, no ({mass}) that rendered as (0 kg)");
     }
 
     /* 3. valid ini on disk: its values must win over the defaults */
