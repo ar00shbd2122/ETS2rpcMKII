@@ -808,8 +808,12 @@ static void build_presence() {
             g.driven_m += g.speed_kmh / 3.6f * dt;   /* km/h -> m/s, times s */
     }
     if (g.driven_m >= 1000.f) {
-        const char* du = "";   /* fmt_distance writes here; unit is already in the string */
+        /* v5.0.7: fmt_distance returns the number only; the unit comes
+         * back through du - "9.4 km", not a bare "9.4" */
+        const char* du = "";
         tok["driven"] = fmt_distance(g.driven_m, imp, &du);
+        tok["driven"] += " ";
+        tok["driven"] += du;
     } else
         tok["driven"] = g.driven_m >= 1.f
             ? std::to_string((int)std::lround(g.driven_m)) + " m" : "";
