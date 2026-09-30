@@ -26,9 +26,7 @@
 #include <windows.h>
 #include <cstring>
 #include <cstdio>
-#include <cstdlib>
 #include <ctime>
-#include <fstream>
 #include <string>
 #include <map>
 #include <algorithm>
@@ -86,7 +84,6 @@ struct Data {
     char    src_city[64]            = {};
     char    src_company[64]         = {};
     float   planned_distance_km     = 0.f;
-    float   job_start_distance_m    = 0.f;   /* v5.0.1 progress baseline */
     int64_t income                  = 0;
 
     /* truck config */
@@ -119,57 +116,17 @@ struct Data {
     bool    job_active              = false;
     float   fine_amount             = 0.f;
     int64_t session_start           = 0;
-    /* v5.0.5: baseline persistence - where the job's progress was
-     * before this session started, restored from disk on resume */
-    float   persisted_baseline_m    = 0.f;
-    bool    persisted_used          = false;
-    std::string persisted_key;      /* which job the baseline belongs to */
+    /* v5.0.6: session odometer - speed x time, nothing on disk */
+    float   driven_m                = 0.f;
+    int64_t odom_t0                 = 0;
 } g;
 
 static int64_t g_fine_until      = 0;
 static int64_t g_tollgate_until  = 0;
 static int64_t g_delivered_until = 0;
 static int64_t g_delivered_income = 0;
-/* ── job baseline persistence (v5.0.5) ─────────────────────
- * ets2rpcmkii.job next to the ini remembers the progress baseline of
- * the active job. Quitting and reloading a save used to restart
- * {job_progress} at 0%: the snapshot died with the session and the
- * game never reports the job's original distance. */
-static int64_t g_last_save = 0;
-
+/* whole seconds since the epoch; used by the session odometer */
 static int64_t now_s() { return (int64_t)time(nullptr); }
-static void fold_utf8(const std::string& in, std::string& out);   /* city folding, defined below */
-
-/* identity of the active job: folded cargo + cities. A save of a
- * DIFFERENT job must never inherit an old baseline. */
-static std::string job_key() {
-    std::string k;
-    fold_utf8(g.cargo_name, k); k += '|';
-    fold_utf8(g.src_city,   k); k += '|';
-    fold_utf8(g.dest_city,  k);
-    return k;
-}
-
-static void job_persist() {
-    if (!g.job_active || g.job_start_distance_m <= 1.f) return;
-    std::string path = cfg::state_directory() + "\\ets2rpcmkii.job";
-    HANDLE h = CreateFileA(path.c_str(), GENERIC_WRITE, 0, nullptr,
-                           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h == INVALID_HANDLE_VALUE) return;
-    char buf[1024];   /* folded Cyrillic keys can grow past 512 */
-    int n = snprintf(buf, sizeof(buf), "key = %s\nbaseline_m = %.1f\n",
-                     job_key().c_str(), g.job_start_distance_m);
-    if (n > 0) { DWORD w = 0; WriteFile(h, buf, (DWORD)n, &w, nullptr); }
-    CloseHandle(h);
-}
-
-/* drop the remembered baseline: no job is live any more */
-static void job_forget() {
-    g.persisted_baseline_m = 0.f;
-    g.persisted_used       = false;
-    g.persisted_key.clear();
-    DeleteFileA((cfg::state_directory() + "\\ets2rpcmkii.job").c_str());
-}
 
 static int64_t g_ferry_until     = 0;
 static int64_t g_train_until     = 0;
@@ -838,39 +795,26 @@ static void build_presence() {
      * 1.6x job configurations omit it entirely), so when it is missing
      * the remaining distance at job start is snapshotted as the baseline
      * instead. The percentage therefore always has a real denominator. */
-    if (g.job_start_distance_m <= 0.f && g.planned_distance_km > 1.f)
-        g.job_start_distance_m = g.planned_distance_km * 1000.f;
-    /* v5.0.5: resuming a save must not restart progress at 0%. The
-     * game never reports the job's original distance, so the plugin
-     * snapshots its own baseline - and that snapshot used to die with
-     * the session. Load the baseline persisted for THIS job (matched
-     * by cargo + src + dest) back in; a different job never sees a
-     * stale number. Written every 30 s and on delivery/cancel. */
-    if (g.job_start_distance_m <= 0.f && g.persisted_baseline_m > 1.f &&
-        g.job_active && g.dest_city[0]) {
-        std::string key = job_key();
-        if (key == g.persisted_key) {
-            g.job_start_distance_m = g.persisted_baseline_m;
-            g.persisted_used = true;
-        }
+    /* v5.0.6: session odometer - distance driven THIS SESSION, computed
+     * as speed x time between pushes. No file, no baseline, nothing to
+     * reset: it lives and dies with the session by design. */
+    if (g.odom_t0 == 0) g.odom_t0 = now_s();
+    {
+        int64_t odom_now = now_s();
+        float dt = (float)(odom_now - g.odom_t0);
+        g.odom_t0 = odom_now;
+        /* paused or stationary time adds nothing */
+        if (dt > 0.f && dt < 120.f && !g_paused && g.speed_kmh > 1.f)
+            g.driven_m += g.speed_kmh / 3.6f * dt;   /* km/h -> m/s, times s */
     }
-    if (g.job_start_distance_m <= 0.f && g.nav_distance_m > 1000.f && g.job_active)
-        g.job_start_distance_m = g.nav_distance_m;   /* fallback baseline */
-    if (g.job_start_distance_m > 1.f && dist_m > 0.f && g.job_active) {
-        float done = 1.f - dist_m / g.job_start_distance_m;
-        if (done < 0.f) done = 0.f; if (done > 1.f) done = 1.f;
-        tok["job_progress"] = std::to_string((int)(done * 100.f));
-        if (now_s() - g_last_save >= 30) {
-            g_last_save = now_s();
-            job_persist();
-        }
-    } else {
-        tok["job_progress"] = "";
-    }
-    /* composite tag: " ・ 62% done" when the percentage is real, empty
-     * otherwise, so a template can never print a dangling '% done' */
-    tok["progress_tag"] = tok["job_progress"].empty()
-        ? "" : " \u00b7 " + tok["job_progress"] + "% done";
+    if (g.driven_m >= 1000.f) {
+        const char* du = "";   /* fmt_distance writes here; unit is already in the string */
+        tok["driven"] = fmt_distance(g.driven_m, imp, &du);
+    } else
+        tok["driven"] = g.driven_m >= 1.f
+            ? std::to_string((int)std::lround(g.driven_m)) + " m" : "";
+    tok["driven_tag"] = tok["driven"].empty()
+        ? "" : " \u00b7 " + tok["driven"] + " driven";
     tok["fuel_l"]        = std::to_string((int)std::lround(g.fuel_l));
     tok["jobs_done"]     = std::to_string(g_jobs_done);
     tok["state_name"]    = state_key(g_state);
@@ -1127,29 +1071,6 @@ static void config_impl(const scs_telemetry_configuration_t* info) {
         g.last_cargo[0] = '\0';   /* fresh job: the old snapshot must
         g.last_dest[0]  = '\0';      never leak into the new card */
         g.last_src[0]   = '\0';
-        g.job_start_distance_m = 0.f;
-        {
-            /* v5.0.5: resumed save? pick up the baseline persisted for
-             * THIS job so {job_progress} continues, never 0% */
-            std::ifstream f(cfg::state_directory() + "\\ets2rpcmkii.job");
-            std::string line, pkey;
-            float base = 0.f;
-            auto cut = [](std::string s) {
-                size_t a = s.find_first_not_of(" \t\r");
-                size_t b = s.find_last_not_of(" \t\r");
-                return a == std::string::npos ? std::string() : s.substr(a, b - a + 1);
-            };
-            while (std::getline(f, line)) {
-                size_t eq = line.find('=');
-                if (eq == std::string::npos) continue;
-                std::string k = cut(line.substr(0, eq));
-                std::string v = cut(line.substr(eq + 1));
-                if      (k == "key")        pkey = v;
-                else if (k == "baseline_m") base = (float)atof(v.c_str());
-            }
-            g.persisted_key        = pkey;
-            g.persisted_baseline_m = base;
-        }
         if (!g_logged_cfg) { g_logged_cfg = true; log_msg("[ETS2rpcMKII] Job data received from configuration."); }
     }
 
@@ -1192,8 +1113,6 @@ static void gameplay_impl(const scs_telemetry_gameplay_event_t* gev) {
         g.src_city[0] = '\0';
         g.cargo_name[0] = '\0';
         g.planned_distance_km = 0.f;
-        g.job_start_distance_m = 0.f;
-        job_forget();
         g_ferry_until = 0;
         g_train_until = 0;
         /* the delivery pay arrives as the "revenue" attribute */
@@ -1219,8 +1138,6 @@ static void gameplay_impl(const scs_telemetry_gameplay_event_t* gev) {
         g.src_city[0] = '\0';
         g.cargo_name[0] = '\0';
         g.planned_distance_km = 0.f;
-        g.job_start_distance_m = 0.f;
-        job_forget();
         g_ferry_until = 0;
         g_train_until = 0;
     }

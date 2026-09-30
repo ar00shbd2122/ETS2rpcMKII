@@ -20,7 +20,7 @@ and every line of it is yours to rewrite while the game is running.
 > works. If Discord removes it one day, this project dies with the tech rather
 > than pretending to be someone else's verified game. Use it knowing that.
 
-Current release: **v5.0.5**. History at the bottom.
+Current release: **v5.0.6**. History at the bottom.
 
 ## What it looks like
 
@@ -74,7 +74,7 @@ button1_label = Get on Steam
 button1_url   = https://store.steampowered.com/app/227300/Euro_Truck_Simulator_2/
 
 [template.delivery_active]
-state        = Close to {city}{country_tag} ・ {job_progress}% done
+state        = {src}{src_tag} → {dest}{dest_tag}{driven_tag}
 details      = {cargo} ({mass}) ・ {distance} {distance_unit} ・ ETA {eta_clock}
 ```
 
@@ -159,7 +159,8 @@ The ini failsafe + schema suite (37 checks) runs on every build.
 
 | Version | What changed |
 |---|---|
-| **5.0.5** (current) | Progress survives a restart. Reloading a save mid-job used to show 0% done: the plugin measures progress against the distance it saw at startup, and that snapshot died with the session while the game never reports the job's original distance. The baseline is now persisted to a tiny `ets2rpcmkii.job` file next to the ini (keyed by cargo + route, so a different job never inherits a stale number), refreshed every 30 s, and dropped on delivery or cancellation. |
+| **5.0.6** (current) | Simplicity release. The job-percentage machinery is gone: it needed a snapshot of the job's distance at start (the game never reports it), which reset to 0% whenever you reloaded a save mid-job, and fixing that properly wanted a state file on disk. In its place: a session odometer. The new `{driven}` and `{driven_tag}` tokens show how far you have driven this session (`・ 128 km driven`), computed as speed x time - no file, no baseline, nothing to reset. Still one DLL plus an optional ini. |
+| 5.0.5 | Progress survives a restart via a persisted baseline file (superseded by 5.0.6, which removes the file again). |
 | 5.0.4 | Ferry/train mixup fixed: an off-by-one in the event id check sorted every crossing into the train branch, so ferries rode as "Rail freight". Route lines now carry per-city country codes: `Pori (FIN) → Oslo (NOR)` via the new `{src_tag}`, `{dest_tag}` and `{ferry_tag}` tokens. Delivery-complete cards keep their city names again (the v5.0.3 snapshot fallback was overwritten before it could be used). Discord offline mode: three quick retries, then a quiet probe every 30 s instead of hammering, one log line for the outage, and status resumes the moment Discord answers. |
 | 5.0.3 | Snapshot hygiene. `{distance}` no longer fakes "0 km" with no route, `{cargo}`/`{mass}` stay empty without a job, `{wear}` shows chassis wear (was cargo damage), paused/resting/fine defaults got honest static lines, and the shipped template matched the baked-in defaults again (a .gitignore rule had been eating it). |
 | **5.0.2** | Honesty release. The "Close to {city}" line was never your current road - {city} is the job's source/destination, so it pretended to know where you are. Default delivery and paused lines now show the plain route: `{src} → {dest}`. Pausing in free-roam no longer prints "(0 kg)" with a nameless cargo: job-bound tokens stay empty when there is no job, and tidy_line removes the empty parens. |

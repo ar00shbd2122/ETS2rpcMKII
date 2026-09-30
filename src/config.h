@@ -40,10 +40,6 @@ bool valid_asset_key(const std::string& key);
 /* Load (or create) ets2rpcmkii.ini in the given directory. */
 void init(const std::string& directory);
 
-/* The directory passed to init(): where the ini lives and where
- * plugin-side state (ets2rpcmkii.job) belongs. Empty before init. */
-const std::string& state_directory();
-
 /* Optional log hook for failsafe notices (ini missing, defaults
  * written, file vanished mid-session). Pass the game-log writer,
  * or nullptr to disable. */

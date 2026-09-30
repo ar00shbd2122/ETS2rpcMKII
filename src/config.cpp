@@ -36,7 +36,6 @@ struct Store {
     FieldTemplates         gtpl;                           /* [template]     */
     std::map<std::string, FieldTemplates> stpl;            /* [template.x]   */
     std::string path;
-    std::string dir;                                       /* where the ini lives */
     long long   mtime = 0;
     long long   last_stat = 0;                             /* reload throttle */
 };
@@ -163,7 +162,7 @@ static const char* DEFAULT_INI =
 ";button2_url   = https://discord.gg/truckersmp\n"
 "\n"
 "[template.delivery_active]\n"
-"state        = {src}{src_tag} → {dest}{dest_tag}{progress_tag}\n"
+"state        = {src}{src_tag} → {dest}{dest_tag}{driven_tag}\n"
 "details      = {cargo} ({mass}) ・ {distance} {distance_unit} ・ ETA {eta_clock}\n"
 
 "\n"
@@ -368,12 +367,9 @@ static void load_or_create() {
 void set_log_callback(void (*fn)(const char* msg)) { g_log_cb = fn; }
 
 void init(const std::string& directory) {
-    g.dir = directory;
     g.path = directory + "\\ets2rpcmkii.ini";
     load_or_create();
 }
-
-const std::string& state_directory() { return g.dir; }
 
 void maybe_reload() {
     if (g.path.empty()) return;

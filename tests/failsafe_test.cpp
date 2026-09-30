@@ -119,9 +119,10 @@ int main() {
                                                "2f. regenerated file: ferry/train templates use real crossing names");
         check(text.find("({country_code})") == std::string::npos,
                                                "2g. regenerated file: no raw ( country_code ) parens left anywhere");
-        check(text.find("{job_progress}% done") == std::string::npos &&
-              text.find("{progress_tag}") != std::string::npos,
-                                               "2h. v5.0.1: no static '% done' suffix; composite {progress_tag} used");
+        check(text.find("{job_progress}") == std::string::npos &&
+              text.find("{progress_tag}") == std::string::npos &&
+              text.find("{driven_tag}") != std::string::npos,
+                                               "2h. v5.0.6: no % done suffix; the session odometer {driven_tag} replaced it");
         check(text.find("{city}") == std::string::npos ||
               text.find("{src}") != std::string::npos,
                                                "2i. v5.0.2: default lines use the honest {src} -> {dest} route, not a fake city");

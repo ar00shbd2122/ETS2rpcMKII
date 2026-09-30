@@ -159,8 +159,8 @@ tokens vanish silently, so a typo can never garble your profile.
 | `{distance_unit}` | km or mi | never |
 | `{eta}` | minutes of driving left | no route |
 | `{eta_clock}` | arrival as wall-clock time, e.g. 17:45 | no route |
-| `{job_progress}` | route completion percentage, 0 to 100 | unknown baseline |
-| `{progress_tag}` | ready-to-append `・ 62% done`, empty when the percentage is unknown, so a line never ends in a bare `% done` | unknown baseline |
+| `{driven}` | distance driven this session, e.g. 128 km; speed x time, nothing on disk, starts at zero with the game | always shown once moving |
+| `{driven_tag}` | ready-to-append `・ 128 km driven`, empty until you are rolling | standing still |
 | `{income}` | job pay with thousands separators | no job |
 
 ### Driving
@@ -206,13 +206,11 @@ folder, so a Russian client reporting Cyrillic city names (Выборг) still
 resolves correctly. If nothing matches, the country tokens are empty and
 `{city}` still shows the raw city name.
 
-Progress across restarts: `{job_progress}` is measured against the
-remaining distance the plugin saw when the job started. That baseline
-is persisted in a small `ets2rpcmkii.job` file next to the ini, so
-quitting the game and loading a save mid-job continues the percentage
-instead of restarting at 0%. The file is keyed by cargo and route (a
-different job never inherits a stale baseline), refreshed every 30 s,
-and deleted when the job is delivered or cancelled.
+Session odometer: `{driven}` integrates your speed between presence
+updates, so it counts real driving time only - paused menus and red
+lights do not add kilometers. It is deliberately memory-only: there
+is no baseline to get wrong and no state file, which is why it
+replaced the job-percentage token in 5.0.6.
 
 Per-city route tags: `{src_tag}` and `{dest_tag}` resolve each city
 independently through the same table, so a route can read
