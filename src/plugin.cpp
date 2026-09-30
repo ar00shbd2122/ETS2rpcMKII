@@ -1067,7 +1067,6 @@ static void config_impl(const scs_telemetry_configuration_t* info) {
         else if (!strcmp(n, SCS_TELEMETRY_CONFIG_ATTRIBUTE_destination_company)) rdstr(v, g.dest_company, sizeof(g.dest_company));
         else if (!strcmp(n, SCS_TELEMETRY_CONFIG_ATTRIBUTE_source_city))       rdstr(v, g.src_city,     sizeof(g.src_city));
         else if (!strcmp(n, SCS_TELEMETRY_CONFIG_ATTRIBUTE_source_company))    rdstr(v, g.src_company,  sizeof(g.src_company));
-        else if (!strcmp(n, SCS_TELEMETRY_CONFIG_ATTRIBUTE_planned_distance_km)) rdflt(v, g.planned_distance_km);
         else if (!strcmp(n, SCS_TELEMETRY_CONFIG_ATTRIBUTE_income))            rds64(v, g.income);
         else if (!strcmp(n, SCS_TELEMETRY_CONFIG_ATTRIBUTE_brand_id))          rdstr(v, g.truck_brand,  sizeof(g.truck_brand));
         else if (!strcmp(n, SCS_TELEMETRY_CONFIG_ATTRIBUTE_name))              rdstr(v, g.truck_model,  sizeof(g.truck_model));
@@ -1120,7 +1119,6 @@ static void gameplay_impl(const scs_telemetry_gameplay_event_t* gev) {
         g.dest_city[0] = '\0';
         g.src_city[0] = '\0';
         g.cargo_name[0] = '\0';
-        g.planned_distance_km = 0.f;
         g_ferry_until = 0;
         g_train_until = 0;
         /* the delivery pay arrives as the "revenue" attribute */
@@ -1145,7 +1143,6 @@ static void gameplay_impl(const scs_telemetry_gameplay_event_t* gev) {
         g.dest_city[0] = '\0';
         g.src_city[0] = '\0';
         g.cargo_name[0] = '\0';
-        g.planned_distance_km = 0.f;
         g_ferry_until = 0;
         g_train_until = 0;
     }

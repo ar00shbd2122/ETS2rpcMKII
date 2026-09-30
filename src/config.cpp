@@ -53,7 +53,7 @@ static const FieldTemplates kEmptyFt;
 /* ── default ini (written on first launch) ──────────────────── */
 static const char* DEFAULT_INI =
 "; ============================================================\n"
-";  ETS2rpcMKII configuration  (v" cfg::VERSION ")\n"
+";  ETS2rpcMKII configuration  (v" ETS2RPCMKII_VERSION ")\n"
 ";  Hot-reloaded: save this file and the presence updates within\n"
 ";  a couple of seconds. No game restart needed.\n"
 ";  Delete this file to regenerate the defaults.\n"
