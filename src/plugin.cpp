@@ -1,5 +1,5 @@
 /*
- * ETS2rpcMKII - Discord Rich Presence - plugin.cpp (v4.2)
+ * ETS2rpcMKII - Discord Rich Presence - plugin.cpp
  * Single self-contained DLL plugin for Euro Truck Simulator 2
  *
  *   Built against the real official SCS Telemetry SDK headers
@@ -37,9 +37,8 @@
 #include "eurotrucks2/scssdk_telemetry_eut2.h"
 
 /* ETS2rpcMKII */
-#include "plugin_version.h"
-#include "discord_ipc.h"
 #include "config.h"
+#include "discord_ipc.h"
 
 static const uint64_t FALLBACK_APP_ID = 1553660903986045029ULL;
 
@@ -83,7 +82,6 @@ struct Data {
     char    dest_company[64]        = {};
     char    src_city[64]            = {};
     char    src_company[64]         = {};
-    float   planned_distance_km     = 0.f;
     int64_t income                  = 0;
 
     /* truck config */
@@ -721,8 +719,7 @@ static void build_presence() {
     Tokens tok;
     const char* dist_unit = "km";
     const char* spd_unit  = "km/h";
-    float dist_m = g.nav_distance_m > 0.f ? g.nav_distance_m
-                 : g.planned_distance_km * 1000.f;
+    float dist_m = g.nav_distance_m;
 
     /* country tokens always resolve so {city}, {country} and
      * {country_emoji} work in every template. The badge slot itself is
@@ -790,13 +787,8 @@ static void build_presence() {
                snprintf(ebuf, sizeof(ebuf), "%d:%02d %s", h, eta_lt.tm_min, eta_lt.tm_hour < 12 ? "AM" : "PM"); }
         tok["eta_clock"]  = ebuf;
     } else tok["eta_clock"] = "";
-    /* v5.0.1: route completion 0..100 %, planned distance vs remaining.
-     * planned_distance_km is NOT always delivered by the game (several
-     * 1.6x job configurations omit it entirely), so when it is missing
-     * the remaining distance at job start is snapshotted as the baseline
-     * instead. The percentage therefore always has a real denominator. */
-    /* v5.0.6: session odometer - distance driven THIS SESSION, computed
-     * as speed x time between pushes. No file, no baseline, nothing to
+    /* session odometer: distance driven THIS SESSION, computed as
+     * speed x time between pushes. No file, no baseline, nothing to
      * reset: it lives and dies with the session by design. */
     if (g.odom_t0 == 0) g.odom_t0 = now_s();
     {
@@ -819,6 +811,18 @@ static void build_presence() {
             ? std::to_string((int)std::lround(g.driven_m)) + " m" : "";
     tok["driven_tag"] = tok["driven"].empty()
         ? "" : " \u00b7 " + tok["driven"] + " driven";
+    /* elapsed session time, ready to append: " ・ 1 h 24 min". Counts
+     * wall-clock from plugin start, unlike {time} which is the clock. */
+    {
+        int64_t sess = now_s() - (g.session_start ? g.session_start : now_s());
+        if (sess < 0) sess = 0;
+        char sbuf[32];
+        if      (sess >= 5400) snprintf(sbuf, sizeof(sbuf), "%dh %dmin",  (int)(sess / 3600), (int)((sess % 3600) / 60));
+        else if (sess >=   60) snprintf(sbuf, sizeof(sbuf), "%d min",     (int)(sess / 60));
+        else                   snprintf(sbuf, sizeof(sbuf), "just started");
+        tok["session"]      = sbuf;
+        tok["session_tag"] = (sess >= 60) ? " \u00b7 " + std::string(sbuf) + " in" : "";
+    }
     tok["fuel_l"]        = std::to_string((int)std::lround(g.fuel_l));
     tok["jobs_done"]     = std::to_string(g_jobs_done);
     tok["state_name"]    = state_key(g_state);
@@ -1304,7 +1308,7 @@ static SCSAPI_RESULT init_impl(const scs_u32_t version,
 
     char banner[128];
     snprintf(banner, sizeof(banner), "[ETS2rpcMKII] v%s initialising (telemetry API %u.%u).",
-             ETS2RPCMKII_VERSION, SCS_GET_MAJOR_VERSION(version), SCS_GET_MINOR_VERSION(version));
+             cfg::VERSION, SCS_GET_MAJOR_VERSION(version), SCS_GET_MINOR_VERSION(version));
     log_msg(banner);
 
     if (SCS_GET_MAJOR_VERSION(version) != 1) {

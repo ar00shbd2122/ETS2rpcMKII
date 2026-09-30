@@ -409,7 +409,7 @@ The game should never crash because the Rich Presence plugin did.
 |--------|----------|
 | DOCS.md | Full configuration guide |
 | templates/ | Example and community presets |
-| CHANGELOG.md | Release history |
+| Releases page | Release history and downloads |
 | LICENSE | MIT license |
 
 ---

@@ -161,6 +161,8 @@ tokens vanish silently, so a typo can never garble your profile.
 | `{eta_clock}` | arrival as wall-clock time, e.g. 17:45 | no route |
 | `{driven}` | distance driven this session, e.g. 128 km; speed x time, nothing on disk, starts at zero with the game | always shown once moving |
 | `{driven_tag}` | ready-to-append `・ 128 km driven`, empty until you are rolling | standing still |
+| `{session}` | elapsed session time, e.g. `1h 24min`; wall-clock since the game started | never |
+| `{session_tag}` | ready-to-append `・ 1h 24min in`, empty in the first minute | first minute |
 | `{income}` | job pay with thousands separators | no job |
 
 ### Driving
@@ -210,7 +212,7 @@ Session odometer: `{driven}` integrates your speed between presence
 updates, so it counts real driving time only - paused menus and red
 lights do not add kilometers. It is deliberately memory-only: there
 is no baseline to get wrong and no state file, which is why it
-replaced the job-percentage token in 5.0.6.
+replaced the old job-percentage token.
 
 Per-city route tags: `{src_tag}` and `{dest_tag}` resolve each city
 independently through the same table, so a route can read
@@ -275,7 +277,7 @@ state        = Browsing the job market
 
 Any key is a city substring mapped to a country name for the
 `{country}` tokens, e.g. `dresden = Germany`. The built-in table
-already covers roughly 90 ETS2 cities, so this section is only for
+already covers roughly 170 ETS2 cities, so this section is only for
 gaps and mod map cities.
 
 ## Images and art assets

@@ -121,8 +121,9 @@ int main() {
                                                "2g. regenerated file: no raw ( country_code ) parens left anywhere");
         check(text.find("{job_progress}") == std::string::npos &&
               text.find("{progress_tag}") == std::string::npos &&
-              text.find("{driven_tag}") != std::string::npos,
-                                               "2h. v5.0.6: no % done suffix; the session odometer {driven_tag} replaced it");
+              text.find("{driven_tag}") != std::string::npos &&
+              text.find("{session_tag}") != std::string::npos,
+                                               "2h. v1.1.1: session odometer + elapsed time tags on the delivery line");
         check(text.find("{city}") == std::string::npos ||
               text.find("{src}") != std::string::npos,
                                                "2i. v5.0.2: default lines use the honest {src} -> {dest} route, not a fake city");

@@ -20,6 +20,10 @@
 
 namespace cfg {
 
+/* Single source of truth for the release version, next to
+ * ETS2RPCMKII_VERSION (plugin_version.h). */
+extern const char* const VERSION;
+
 /* The shared application id shipped with the repo. Presence sent under
  * this id uses ONLY the built-in art set: custom [brands] and [countries]
  * image mappings are ignored, because the art lives on the owner's
@@ -101,9 +105,5 @@ const FieldTemplates& state_template(const std::string& state_key);
 
 /* True if any handcrafted field is configured at all. */
 bool any_template_set();
-
-/* Legacy [templates] wrapper support (v2 compat): wraps raw text. */
-std::string tpl_state(const std::string& state, const std::string& details);
-std::string tpl_details(const std::string& details);
 
 } /* namespace cfg */

@@ -1,0 +1,30 @@
+# Build output
+build/
+build-*/
+out/
+bundle/
+*.dll
+*.lib
+*.exp
+*.pdb
+*.obj
+*.o
+
+# Local plugin config. The SHIPPED template at templates/ets2rpcmkii.ini
+# IS committed (negated below); an ini sitting in the repo root is local.
+ets2rpcmkii.ini
+!templates/ets2rpcmkii.ini
+
+# Downloaded art assets (tools/download_assets.sh)
+assets/
+
+# Packed release zips
+ets2rpcmkii-v*.zip
+
+# IDE / OS
+.vs/
+.vscode/
+.idea/
+*.user
+Thumbs.db
+.DS_Store

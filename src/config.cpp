@@ -8,6 +8,11 @@
 #include "config.h"
 #include "plugin_version.h"
 
+namespace cfg {
+/* single source of truth: plugin_version.h's ETS2RPCMKII_VERSION */
+extern const char* const VERSION = ETS2RPCMKII_VERSION;
+}
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <algorithm>
@@ -32,7 +37,6 @@ struct Store {
     std::map<std::string, Value> kv;
     std::vector<std::pair<std::string, std::string>> brands;
     std::vector<std::pair<std::string, std::string>> countries;
-    std::map<std::string, std::string> wrap;               /* v2 [templates] */
     FieldTemplates         gtpl;                           /* [template]     */
     std::map<std::string, FieldTemplates> stpl;            /* [template.x]   */
     std::string path;
@@ -49,7 +53,7 @@ static const FieldTemplates kEmptyFt;
 /* ── default ini (written on first launch) ──────────────────── */
 static const char* DEFAULT_INI =
 "; ============================================================\n"
-";  ETS2rpcMKII configuration  (v" ETS2RPCMKII_VERSION ")\n"
+";  ETS2rpcMKII configuration  (v" cfg::VERSION ")\n"
 ";  Hot-reloaded: save this file and the presence updates within\n"
 ";  a couple of seconds. No game restart needed.\n"
 ";  Delete this file to regenerate the defaults.\n"
@@ -162,7 +166,7 @@ static const char* DEFAULT_INI =
 ";button2_url   = https://discord.gg/truckersmp\n"
 "\n"
 "[template.delivery_active]\n"
-"state        = {src}{src_tag} → {dest}{dest_tag}{driven_tag}\n"
+"state        = {src}{src_tag} → {dest}{dest_tag}{driven_tag}{session_tag}\n"
 "details      = {cargo} ({mass}) ・ {distance} {distance_unit} ・ ETA {eta_clock}\n"
 
 "\n"
@@ -208,7 +212,7 @@ static const char* DEFAULT_INI =
 "\n"
 "[template.on_train]\n"
 "state        = On a train → {ferry_to}{ferry_tag}\n"
-"details      = Rail freight from {ferry_from}\n"
+"details      = Crossing by rail from {ferry_from}\n"
 
 "\n"
 "[template.resting]\n"
@@ -315,10 +319,6 @@ static void parse(std::string text) {
              * applications a value that looks like an asset key doubles
              * as the flag art for the badge */
             fresh.countries.push_back({ key, val });
-        }
-        else if (section == "templates") {              /* v2 compat */
-            if      (key == "state")   fresh.wrap["state"]   = val;
-            else if (key == "details") fresh.wrap["details"] = val;
         }
         else if (section == "template") {
             ft_set(fresh.gtpl, key, val);
@@ -481,20 +481,7 @@ static std::string replace_token(std::string t, const char* token, const std::st
     return t;
 }
 
-std::string tpl_state(const std::string& state, const std::string& details) {
-    auto s = g.wrap.find("state");
-    if (s == g.wrap.end()) return state;
-    std::string t = replace_token(s->second, "{details}", details);
-    return       replace_token(t,           "{state}",   state);
-}
-
-std::string tpl_details(const std::string& details) {
-    auto s = g.wrap.find("details");
-    if (s == g.wrap.end()) return details;
-    return replace_token(s->second, "{details}", details);
-}
-
-/* ── ini schema report (v5.0) ────────────────────────────────
+/* ── ini schema report ──────────────────────────────────
  * The parser forgives everything; this pass tells the user what it
  * forgave, once per load, in plain game-log lines. Catches: unknown
  * keys in known sections (typos), unknown template state names, and
