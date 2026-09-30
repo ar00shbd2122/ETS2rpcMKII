@@ -18,6 +18,7 @@ ets2rpcmkii-v*.zip
 # sitting in the repo root or next to the DLL are local state.
 ets2rpcmkii.ini
 swiftdrive.ini
+ets2rpcmkii.job
 !templates/ets2rpcmkii.ini
 
 # Downloaded art assets (fetched via tools/download_assets.sh)

@@ -206,6 +206,14 @@ folder, so a Russian client reporting Cyrillic city names (Выборг) still
 resolves correctly. If nothing matches, the country tokens are empty and
 `{city}` still shows the raw city name.
 
+Progress across restarts: `{job_progress}` is measured against the
+remaining distance the plugin saw when the job started. That baseline
+is persisted in a small `ets2rpcmkii.job` file next to the ini, so
+quitting the game and loading a save mid-job continues the percentage
+instead of restarting at 0%. The file is keyed by cargo and route (a
+different job never inherits a stale baseline), refreshed every 30 s,
+and deleted when the job is delivered or cancelled.
+
 Per-city route tags: `{src_tag}` and `{dest_tag}` resolve each city
 independently through the same table, so a route can read
 `Pori (FIN) → Oslo (NOR)` even while the location you are driving

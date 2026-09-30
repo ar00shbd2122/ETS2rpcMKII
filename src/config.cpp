@@ -36,6 +36,7 @@ struct Store {
     FieldTemplates         gtpl;                           /* [template]     */
     std::map<std::string, FieldTemplates> stpl;            /* [template.x]   */
     std::string path;
+    std::string dir;                                       /* where the ini lives */
     long long   mtime = 0;
     long long   last_stat = 0;                             /* reload throttle */
 };
@@ -367,9 +368,12 @@ static void load_or_create() {
 void set_log_callback(void (*fn)(const char* msg)) { g_log_cb = fn; }
 
 void init(const std::string& directory) {
+    g.dir = directory;
     g.path = directory + "\\ets2rpcmkii.ini";
     load_or_create();
 }
+
+const std::string& state_directory() { return g.dir; }
 
 void maybe_reload() {
     if (g.path.empty()) return;
