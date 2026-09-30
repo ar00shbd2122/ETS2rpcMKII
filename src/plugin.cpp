@@ -434,6 +434,55 @@ static std::string country_emoji(const std::string& cc) {
     return out;
 }
 
+/* v5.0.4: 2-letter code -> 3-letter uppercase display code
+ * (ISO 3166-1 alpha-3) for the per-city tags, e.g. fi -> FIN. */
+static std::string cc_to_iso3(const char* cc2) {
+    struct Cc3 { const char* cc2; const char* cc3; };
+    static const Cc3 MAP[] = {
+        { "de","DEU" },{ "fr","FRA" },{ "gb","GBR" },{ "nl","NLD" },
+        { "be","BEL" },{ "lu","LUX" },{ "ch","CHE" },{ "at","AUT" },
+        { "es","ESP" },{ "pt","PRT" },{ "it","ITA" },{ "dk","DNK" },
+        { "se","SWE" },{ "no","NOR" },{ "fi","FIN" },{ "cz","CZE" },
+        { "pl","POL" },{ "sk","SVK" },{ "hu","HUN" },{ "si","SVN" },
+        { "ru","RUS" },{ "by","BLR" },{ "ee","EST" },{ "lv","LVA" },
+        { "lt","LTU" },{ "ro","ROU" },{ "bg","BGR" },{ "hr","HRV" },
+        { "ba","BIH" },{ "rs","SRB" },{ "me","MNE" },{ "al","ALB" },
+        { "gr","GRC" },
+    };
+    if (!cc2) return "";
+    for (const auto& e : MAP)
+        if (strcmp(cc2, e.cc2) == 0) return e.cc3;
+    return "";
+}
+
+/* v5.0.4: resolve ONE city name to its 2-letter country code.
+ * [countries] mappings run before the built-in table, so a user
+ * entry wins for that city too. Empty when the city is unknown. */
+static std::string cc_for_city(const char* city) {
+    std::string c = norm_city(city);
+    if (c.empty()) return "";
+    for (const auto& kv : cfg::countries()) {
+        std::string k; fold_utf8(kv.first, k);
+        const std::string& v = kv.second;
+        if (!k.empty() && c.find(k) != std::string::npos &&
+            v.size() == 2 &&
+            ((v[0] >= 'a' && v[0] <= 'z') || (v[0] >= '0' && v[0] <= '9')) &&
+            (v[1] >= 'a' && v[1] <= 'z'))
+            return v;
+    }
+    for (const auto& e : CITIES)
+        if (c.find(e.city) != std::string::npos) return e.cc;
+    return "";
+}
+
+/* v5.0.4: ready-to-append ISO tag for one city, e.g. " (FIN)".
+ * Empty when the city is unknown or off the map, so a line can
+ * never end in bare parentheses. */
+static std::string city_cc_tag(const char* city) {
+    std::string iso3 = cc_to_iso3(cc_for_city(city).c_str());
+    return iso3.empty() ? "" : " (" + iso3 + ")";
+}
+
 /* - token engine ------------------------------------------- */
 using Tokens = std::map<std::string, std::string>;
 
@@ -688,10 +737,12 @@ static void build_presence() {
      * the job buffers, so {cargo}/{dest} would be empty exactly when the
      * completion card needs them. Both are snapshotted at event time. */
     tok["cargo"]          = tok["cargo"].empty() ? g.last_cargo : tok["cargo"];
+    /* v5.0.4: live buffers first, delivery snapshot as the fallback.
+     * Two stray re-assignments from v5.0.3 overwrote this with the
+     * raw buffers, which made the snapshot dead code - the
+     * delivery_complete card lost its city names entirely. */
     tok["dest"]           = g.dest_city[0] ? g.dest_city : g.last_dest;
     tok["src"]            = g.src_city[0]  ? g.src_city  : g.last_src;
-    tok["dest"]           = g.dest_city;
-    tok["src"]            = g.src_city;
     tok["company"]        = g.dest_company[0] ? g.dest_company : g.src_company;
     /* v5.0.2: with no route (free-roam, menus) the honest value is
      * nothing, not a fabricated "0 km". */
@@ -766,6 +817,11 @@ static void build_presence() {
     /* ready-to-append tag: " (FI)" when known, empty (never bare parens)
      * when the city could not be matched */
     tok["country_tag"]    = cc.empty() ? "" : " (" + ccu + ")";
+    /* v5.0.4: per-city 3-letter codes, e.g. "Pori (FIN) → Oslo (NOR)".
+     * Empty for unknown cities, so nothing renders as bare parens. */
+    tok["src_tag"]        = city_cc_tag(tok["src"].c_str());
+    tok["dest_tag"]       = city_cc_tag(tok["dest"].c_str());
+    tok["ferry_tag"]      = city_cc_tag(g.ferry_to);
     tok["country_flag"]   = cc.empty() ? "" : "flag_" + cc;
     tok["country_emoji"]  = cc.empty() ? "" : country_emoji(cc);
     tok["city"]           = g.dest_city[0] ? g.dest_city : g.src_city;
@@ -890,6 +946,7 @@ static void build_presence() {
     if (g_state != State::ON_FERRY && g_state != State::ON_TRAIN) {
         tok["ferry_from"].clear();
         tok["ferry_to"].clear();
+        tok["ferry_tag"].clear();
     }
 
     /* country badge on own apps: user flag art wins over the brand
@@ -1102,7 +1159,11 @@ static void gameplay_impl(const scs_telemetry_gameplay_event_t* gev) {
          * seconds (configurable) and then must expire on its own. The
          * real source/target names arrive as event attributes; the job
          * destination has nothing to do with the crossing route. */
-        const bool is_ferry = (id[12] == 'f');   /* player.use.ferry */
+        /* v5.0.4: the old index math (id[12] == 'f') was off by one
+         * - index 12 is 'e' - so EVERY crossing sorted into the train
+         * branch and ferries rode as "Rail freight". Match the event
+         * id by name instead; no arithmetic to get wrong. */
+        const bool is_ferry = strstr(id, "use.ferry") != nullptr;
         g.ferry_from[0] = '\0';
         g.ferry_to[0]   = '\0';
         if (gev->attributes) {

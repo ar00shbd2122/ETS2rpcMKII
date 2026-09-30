@@ -20,7 +20,7 @@ and every line of it is yours to rewrite while the game is running.
 > works. If Discord removes it one day, this project dies with the tech rather
 > than pretending to be someone else's verified game. Use it knowing that.
 
-Current release: **v5.0.2**. History at the bottom.
+Current release: **v5.0.4**. History at the bottom.
 
 ## What it looks like
 
@@ -159,7 +159,9 @@ The ini failsafe + schema suite (37 checks) runs on every build.
 
 | Version | What changed |
 |---|---|
-| **5.0.2** (current) | Honesty release. The "Close to {city}" line was never your current road - {city} is the job's source/destination, so it pretended to know where you are. Default delivery and paused lines now show the plain route: `{src} → {dest}`. Pausing in free-roam no longer prints "(0 kg)" with a nameless cargo: job-bound tokens stay empty when there is no job, and tidy_line removes the empty parens. |
+| **5.0.4** (current) | Ferry/train mixup fixed: an off-by-one in the event id check sorted every crossing into the train branch, so ferries rode as "Rail freight". Route lines now carry per-city country codes: `Pori (FIN) → Oslo (NOR)` via the new `{src_tag}`, `{dest_tag}` and `{ferry_tag}` tokens. Delivery-complete cards keep their city names again (the v5.0.3 snapshot fallback was overwritten before it could be used). Discord offline mode: three quick retries, then a quiet probe every 30 s instead of hammering, one log line for the outage, and status resumes the moment Discord answers. |
+| 5.0.3 | Snapshot hygiene. `{distance}` no longer fakes "0 km" with no route, `{cargo}`/`{mass}` stay empty without a job, `{wear}` shows chassis wear (was cargo damage), paused/resting/fine defaults got honest static lines, and the shipped template matched the baked-in defaults again (a .gitignore rule had been eating it). |
+| **5.0.2** | Honesty release. The "Close to {city}" line was never your current road - {city} is the job's source/destination, so it pretended to know where you are. Default delivery and paused lines now show the plain route: `{src} → {dest}`. Pausing in free-roam no longer prints "(0 kg)" with a nameless cargo: job-bound tokens stay empty when there is no job, and tidy_line removes the empty parens. |
 | 5.0.1 | Job-progress fix: several 1.6x job configurations never send `planned_distance_km`, which left `{job_progress}` permanently empty and the template's static `% done` suffix dangling on the profile. The remaining distance at job start is now snapshotted as the baseline, the percentage always has a real denominator, and the new composite `{progress_tag}` token renders `・ 62% done` only when the percentage exists - never a bare suffix. |
 | 5.0.0 | The foolproof release. Ini schema report: typos (`evnt_hold`), unknown template states and out-of-range values are named in game.log.txt instead of being silently ignored. Output hygiene: no line can render bare `()`, stray arrows or hanging words, whatever the ini says. Ferry/train rebuilt: timed hold plus the real crossing route from event attributes via new `{ferry_from}`/`{ferry_to}` tokens. Country detection: Unicode city folding (Cyrillic + accents) and ~170-city table incl. Russia, Baltics, Black Sea, Balkans, Greece. New tokens `{eta_clock}`, `{job_progress}`, `{fuel_l}`, `{jobs_done}`, `{state_name}`. Discord: identical-push suppression and a 60 s keepalive. Telemetry floats NaN/inf-guarded. Fault logging rate-limited; shutdown writes a session summary. Hot-reload stat throttled to 1/s. |
 | 4.2.1 | Bare-paren fix in location lines; Cyrillic/accented city matching; city table grown to ~170 cities. |

@@ -84,7 +84,7 @@ static const char* DEFAULT_INI =
 "; City-substring -> country tag for the {country} text tokens,\n"
 "; and, ON YOUR OWN APPLICATION (see [discord] above), the flag\n"
 "; art key for the badge when the value is a valid asset key.\n"
-"; First match wins. The built-in table of ~90 cities runs after\n"
+"; First match wins. The built-in table of ~170 cities runs after\n"
 "; your entries, so mod-map cities work here too.\n"
 ";dresden      = Germany          ; text only on the shared app\n"
 ";dresden      = de               ; text + flag art on own app\n"
@@ -162,7 +162,7 @@ static const char* DEFAULT_INI =
 ";button2_url   = https://discord.gg/truckersmp\n"
 "\n"
 "[template.delivery_active]\n"
-"state        = {src} → {dest}{progress_tag}\n"
+"state        = {src}{src_tag} → {dest}{dest_tag}{progress_tag}\n"
 "details      = {cargo} ({mass}) ・ {distance} {distance_unit} ・ ETA {eta_clock}\n"
 
 "\n"
@@ -202,12 +202,12 @@ static const char* DEFAULT_INI =
 
 "\n"
 "[template.on_ferry]\n"
-"state        = On a ferry → {ferry_to}\n"
+"state        = On a ferry → {ferry_to}{ferry_tag}\n"
 "details      = Crossing from {ferry_from}\n"
 
 "\n"
 "[template.on_train]\n"
-"state        = On a train → {ferry_to}\n"
+"state        = On a train → {ferry_to}{ferry_tag}\n"
 "details      = Rail freight from {ferry_from}\n"
 
 "\n"
@@ -217,7 +217,7 @@ static const char* DEFAULT_INI =
 
 "\n"
 "[template.paused]\n"
-"state        = {src} → {dest}\n"
+"state        = {src}{src_tag} → {dest}{dest_tag}\n"
 "details      = Paused\n"
 
 "\n"

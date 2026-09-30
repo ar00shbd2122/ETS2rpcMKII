@@ -61,6 +61,8 @@ static void (*g_log_cb)(const char*) = nullptr;
 static bool     g_broken_logged = false;
 static bool     g_error_logged  = false;   /* log one rejection per connect,
                                               not one per push (5 s spam) */
+static bool     g_offline_logged = false;  /* offline mode: one line, not spam */
+static int      g_missed_tries   = 0;      /* consecutive failed connect rounds */
 static std::string g_last_activity;        /* last accepted activity JSON */
 static int64_t     g_last_send = 0;        /* last successful write, for keepalive */
 
@@ -69,7 +71,7 @@ static void dlog(const char* msg) { if (g_log_cb) g_log_cb(msg); }
 static void note_broken_pipe() {
     if (!g_broken_logged) {
         g_broken_logged = true;
-        dlog("Discord pipe lost; Discord may have closed it. Retrying every 15 s.");
+        dlog("Discord pipe lost; Discord may have closed it. Reconnecting in the background.");
     }
 }
 
@@ -78,6 +80,13 @@ static void log_discord_frame(const std::string& payload) {
     if (payload.find("\"evt\":\"READY\"") != std::string::npos) {
         g_broken_logged = false;
         g_error_logged  = false;
+        /* v5.0.4: leaving offline mode - say so once, so the log shows
+         * the whole outage without any extra probing chatter. */
+        if (g_offline_logged) {
+            g_offline_logged = false;
+            g_missed_tries   = 0;
+            dlog("Discord is back; presence updates resumed.");
+        }
         dlog("Discord handshake accepted (READY). Presence updates are live.");
         return;
     }
@@ -101,7 +110,19 @@ static void log_discord_frame(const std::string& payload) {
     }
 }
 
-static const int64_t RETRY_INTERVAL_S = 15;
+/* v5.0.4 offline mode: Discord missing (client quit, no desktop app,
+ * or the machine has no internet) is NORMAL, not an error to hammer.
+ * The first three rounds retry fast so a normal restart never waits,
+ * then probing slows to once every 30 s and the log stays quiet until
+ * the pipe answers again. Recovery is instant: the successful probe
+ * connects and the very next presence push goes out. */
+static const int64_t RETRY_INTERVAL_S   = 5;   /* first 3 rounds: quick */
+static const int64_t PROBE_INTERVAL_S   = 30;  /* offline mode: slow probe */
+static const int     MAX_QUICK_TRIES    = 3;  /* rounds before backing off */
+
+static int64_t retry_interval_s() {
+    return (g_missed_tries < MAX_QUICK_TRIES) ? RETRY_INTERVAL_S : PROBE_INTERVAL_S;
+}
 
 static int64_t now_s() {
     return std::chrono::duration_cast<std::chrono::seconds>(
@@ -200,6 +221,8 @@ bool connect(uint64_t application_id) {
     g_last_try = now_s();
     g_broken_logged = false;
     g_error_logged  = false;
+    g_missed_tries  = 0;
+    g_offline_logged = false;
     g_last_activity.clear();
     return true;
 }
@@ -296,9 +319,19 @@ void pump(uint64_t application_id) {
     int64_t now = now_s();
 
     if (g_pipe == INVALID_HANDLE_VALUE) {
-        if (now - g_last_try >= RETRY_INTERVAL_S) {
+        const int64_t iv = retry_interval_s();
+        if (now - g_last_try >= iv) {
             g_last_try = now;                     /* throttle regardless of outcome */
-            connect(application_id);
+            if (connect(application_id)) {
+                g_missed_tries = 0;               /* pipe is back - resume at full speed */
+            } else {
+                if (g_missed_tries < MAX_QUICK_TRIES) ++g_missed_tries;
+                if (g_missed_tries == MAX_QUICK_TRIES && !g_offline_logged) {
+                    g_offline_logged = true;
+                    dlog("Discord not reachable (offline or not running). "
+                         "Probing every 30 s; status resumes automatically.");
+                }
+            }
         }
         return;
     }

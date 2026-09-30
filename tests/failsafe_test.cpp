@@ -125,8 +125,12 @@ int main() {
         check(text.find("{city}") == std::string::npos ||
               text.find("{src}") != std::string::npos,
                                                "2i. v5.0.2: default lines use the honest {src} -> {dest} route, not a fake city");
-        check(text.find("[template.paused]\nstate        = {src} \xe2\x86\x92 {dest}\ndetails      = Paused") != std::string::npos,
+        check(text.find("[template.paused]\nstate        = {src}{src_tag} \xe2\x86\x92 {dest}{dest_tag}\ndetails      = Paused") != std::string::npos,
                                                "2j. v5.0.2: paused default is route + Paused, no ({mass}) that rendered as (0 kg)");
+        check(text.find("{src}{src_tag}") != std::string::npos &&
+              text.find("{dest}{dest_tag}") != std::string::npos &&
+              text.find("{ferry_to}{ferry_tag}") != std::string::npos,
+                                               "2k. v5.0.4: route and rail lines carry per-city ISO tags");
     }
 
     /* 3. valid ini on disk: its values must win over the defaults */

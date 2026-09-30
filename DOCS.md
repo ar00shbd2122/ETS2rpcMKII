@@ -152,6 +152,7 @@ tokens vanish silently, so a typo can never garble your profile.
 | `{mass}` | formatted weight, e.g. 24 t | no job |
 | `{dest}` | destination city | no job |
 | `{src}` | source city | no job |
+| `{src_tag}` `{dest_tag}` | ready-to-append ISO code per city, ` (FIN)`, e.g. `Pori (FIN)` | city unknown |
 | `{company}` | destination company, else source | unknown |
 | `{distance}` | remaining distance, rounded | no route |
 | `{distance_remaining}` | same value as `{distance}` (alias) | no route |
@@ -193,6 +194,7 @@ tokens vanish silently, so a typo can never garble your profile.
 | `{country_emoji}` | the flag as a real emoji | city unknown |
 | `{ferry_from}` | ferry/train crossing origin, e.g. Ostersund | not on a ferry/train |
 | `{ferry_to}` | ferry/train crossing destination | not on a ferry/train |
+| `{ferry_tag}` | ready-to-append ISO code for the crossing destination, ` (FIN)` | not on a ferry/train |
 | `{time}` | local clock, format from `use_24h` | never |
 | `{newline}` | line break (Discord shows one line per field, so mostly useful in tooltips) | never |
 | `{state}` `{details}` | the current default text (useful in `[template]` to decorate defaults) | never |
@@ -203,6 +205,13 @@ plus Russia, Baltics, Black Sea, West Balkans and Greece), and any extra
 folder, so a Russian client reporting Cyrillic city names (Выборг) still
 resolves correctly. If nothing matches, the country tokens are empty and
 `{city}` still shows the raw city name.
+
+Per-city route tags: `{src_tag}` and `{dest_tag}` resolve each city
+independently through the same table, so a route can read
+`Pori (FIN) → Oslo (NOR)` even while the location you are driving
+through is unknown. The codes are the ISO 3166-1 three-letter forms
+(FIN, NOR, DEU, RUS, ...); cities off the map render nothing, never
+bare parentheses.
 
 After token fill every line is tidied automatically: empty `()` from
 vanished tokens is removed, stray separators, arrows and hanging words
