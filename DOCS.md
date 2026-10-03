@@ -201,9 +201,9 @@ tokens vanish silently, so a typo can never garble your profile.
 | `{newline}` | line break (Discord shows one line per field, so mostly useful in tooltips) | never |
 | `{state}` `{details}` | the current default text (useful in `[template]` to decorate defaults) | never |
 
-Country resolution: a built-in table of roughly 170 ETS2 cities (base map
-plus Russia, Baltics, Black Sea, West Balkans and Greece), and any extra
-`[countries]` mappings you add. City names are matched through a Unicode
+Country resolution: a built-in table of roughly 970 ETS2 cities (base map,
+DLCs and the major map mods: Promods, RusMap, Road to Asia, Middle East),
+and any extra `[countries]` mappings you add. City names are matched through a Unicode
 folder, so a Russian client reporting Cyrillic city names (Выборг) still
 resolves correctly. If nothing matches, the country tokens are empty and
 `{city}` still shows the raw city name.
@@ -277,8 +277,9 @@ state        = Browsing the job market
 
 Any key is a city substring mapped to a country name for the
 `{country}` tokens, e.g. `dresden = Germany`. The built-in table
-already covers roughly 170 ETS2 cities, so this section is only for
-gaps and mod map cities.
+already covers roughly 970 ETS2 cities including the major map mods
+(Promods, RusMap, Road to Asia, Middle East), so this section is only
+for gaps, newer map packs and cities we do not know yet.
 
 ## Images and art assets
 
@@ -466,7 +467,7 @@ details = {distance} {distance_unit} left
 | Profile still shows the OLD image after I re-uploaded an asset | Discord caches presence art per session. Quit Discord fully (tray icon, Quit - closing the window is not enough), start it again, then restart the game. If it still shows the old art, delete the asset in the portal and upload the file fresh under the same name. |
 | My buttons are missing | You cannot see your own buttons. Ask a friend to check. |
 | A line shows raw `{tokenn}` | Typos vanish, so a raw token means the token name is wrong but unknown tokens never print. If you truly see braces, the line came from an old cached presence: save the ini again. |
-| Country tokens are empty | The city was not matched. The built-in table covers ~170 cities including Russia and the Baltics; add a mapping in `[countries]`, e.g. `myhometown = Germany`, for anything else. |
+| Country tokens are empty | The city was not matched. The built-in table covers ~970 cities across the base map and major map mods (Promods, RusMap, Road to Asia, Middle East); add a mapping in `[countries]`, e.g. `myhometown = Germany`, for anything else. |
 | Emoji flag shows as a box | Your platform font lacks flag glyphs. Discord on desktop and mobile renders them fine; the game log does not matter. |
 | Presence stuck on one state | Check the thresholds in `[behaviour]`. A very low `cargo_damage_threshold` pins the damaged state. |
 | I broke everything | Delete `ets2rpcmkii.ini`. A fresh default is written on the next launch or reload. If you delete it while the game runs, the baked-in defaults take over instantly (the log says `ets2rpcmkii.ini disappeared`) and the file is regenerated. |
